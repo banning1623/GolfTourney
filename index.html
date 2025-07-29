@@ -1,253 +1,198 @@
-function generateScorecard() {
-            const container = document.getElementById('scorecardContent');
-            if (!container) return;
+function updateOverallScoring() {
+            const tbody = document.getElementById('overall-scores-body');
+            tbody.innerHTML = '';
             
-            if (teamMatches.length === 0) {
-                container.innerHTML = '<p>Please set up teams first in the Team Setup tab.</p>';
+            let team1GrandTotal = 0;
+            let team2GrandTotal = 0;
+            
+            // Display detailed tournament matches
+            updateTournamentMatches();
+            
+            rounds.forEach(round => {
+                if (round.completed) {
+                    const row = document.createElement('tr');
+                    const maxPoints = round.matchType === '1v1' ? 8 : 18; // Adjust based on match type
+                    
+                    row.innerHTML = `
+                        <td>${round.name}</td>
+                        <td>${round.team1Points}</td>
+                        <td>${round.team2Points}</td>
+                        <td>${maxPoints}</td>
+                    `;
+                    tbody.appendChild(row);
+                    
+                    team1GrandTotal += round.team1Points;
+                    team2GrandTotal += round.team2Points;
+                }
+            });
+            
+            // Add totals row
+            const totalRow = document.createElement('tr');
+            totalRow.style.fontWeight = 'bold';
+            totalRow.style.backgroundColor = '#f8f9fa';
+            totalRow.innerHTML = `
+                <td>TOTAL</td>
+                <td>${team1GrandTotal}</td>
+                <td>${team2GrandTotal}</td>
+                <td>440</td>
+            `;
+            tbody.appendChild(totalRow);
+            
+            // Update team totals display
+            document.getElementById('team-totals').innerHTML = `
+                <h4>Team 1: ${team1GrandTotal} points</h4>
+                <h4>Team 2: ${team2GrandTotal} points</h4>
+                ${team1GrandTotal >= 221 ? '<p style="color: var(--garnet); font-weight: bold;">🏆 TEAM 1 WINS!</p>' : ''}
+                ${team2GrandTotal >= 221 ? '<p style="color: var(--garnet); font-weight: bold;">🏆 TEAM 2 WINS!</p>' : ''}
+            `;
+            
+            // Update MVP leaderboard
+            updateMVPLeaderboard();
+        }
+
+        function updateTournamentMatches() {
+            const container = document.getElementById('tournament-matches-container');
+            container.innerHTML = '';
+            
+            rounds.forEach(round => {
+                if (round.completed) {
+                    const matchDiv = document.createElement('div');
+                    matchDiv.className = 'match-detail';
+                    
+                    let matchDetails = `<h4>${round.name} - ${round.matchType}</h4>`;
+                    matchDetails += `<p><strong>Final Score:</strong> Team 1: ${round.team1Points} - Team 2: ${round.team2Points}</p>`;
+                    
+                    if (round.playerScores) {
+                        matchDetails += '<h5>Player Scores:</h5>';
+                        Object.keys(round.playerScores).forEach(playerName => {
+                            const scores = round.playerScores[playerName];
+                            const totalScore = scores.reduce((sum, hole) => sum + hole.score, 0);
+                            const photo = getPlayerPhoto(playerName);
+                            const photoHtml = photo ? `<img src="${photo}" class="player-photo-display" alt="${playerName}">` : '';
+                            
+                            matchDetails += `
+                                <div style="display: flex; align-items: center; margin: 0.5rem 0;">
+                                    ${photoHtml}
+                                    <span><strong>${playerName}:</strong> ${totalScore} (${scores.length} holes)</span>
+                                </div>
+                            `;
+                        });
+                    }
+                    
+                    matchDiv.innerHTML = matchDetails;
+                    container.appendChild(matchDiv);
+                }
+            });
+            
+            if (container.innerHTML === '') {
+                container.innerHTML = '<p>No completed matches yet.</p>';
+            }
+        }
+
+        function updateMVPLeaderboard() {
+            const leaderboardContent = document.getElementById('leaderboard-content');
+            
+            // Calculate player performance scores
+            const playerStats = {};
+            
+            teams.forEach(team => {
+                team.players.forEach(player => {
+                    playerStats[player.name] = {
+                        name: player.name,
+                        teamName: team.name,
+                        totalRounds: 0,
+                        averageScore: 0,
+                        totalScore: 0,
+                        birdiesAndBetter: 0,
+                        pars: 0,
+                        bogeyOrWorse: 0
+                    };
+                });
+            });
+            
+            // Process round data for MVP calculation
+            const course = courses[courses.length - 1];
+            rounds.forEach(round => {
+                if (round.completed && round.playerScores) {
+                    Object.keys(round.playerScores).forEach(playerName => {
+                        if (playerStats[playerName]) {
+                            const scores = round.playerScores[playerName];
+                            playerStats[playerName].totalRounds++;
+                            
+                            scores.forEach(holeScore => {
+                                playerStats[playerName].totalScore += holeScore.score;
+                                const hole = course.holes.find(h => h.number === holeScore.hole);
+                                const scoreToPar = holeScore.score - hole.par;
+                                
+                                if (scoreToPar <= -1) {
+                                    playerStats[playerName].birdiesAndBetter++;
+                                } else if (scoreToPar === 0) {
+                                    playerStats[playerName].pars++;
+                                } else {
+                                    playerStats[playerName].bogeyOrWorse++;
+                                }
+                            });
+                            
+                            playerStats[playerName].averageScore = playerStats[playerName].totalScore / (playerStats[playerName].totalRounds * 18);
+                        }
+                    });
+                }
+            });
+            
+            // Calculate MVP score (lower average + more birdies/pars = better)
+            const mvpCandidates = Object.values(playerStats)
+                .filter(player => player.totalRounds > 0)
+                .map(player => {
+                    const mvpScore = (player.birdiesAndBetter * 3 + player.pars * 1) - player.averageScore;
+                    return { ...player, mvpScore };
+                })
+                .sort((a, b) => b.mvpScore - a.mvpScore)
+                .slice(0, 3);
+            
+            if (mvpCandidates.length === 0) {
+                leaderboardContent.innerHTML = '<p>No data available yet. Complete some rounds to see MVP candidates.</p>';
                 return;
             }
             
-            const canScore = currentRound.scorekeepers.includes(currentScorer);
-            
-            let html = `
-                <div style="background: #e3f2fd; padding: 20px; border-radius: 10px; margin-bottom: 20px; border-left: 5px solid #2196f3;">
-                    <h4 style="color: #1976d2; margin-bottom: 10px;">🏌️ ${courseData.matchFormat.toUpperCase()} Scorecard</h4>
-                    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 15px;">
-                        <div>
-                            <p style="color: #666; margin: 0;">Enter individual gross scores. Net scores and match play results will be calculated automatically.</p>
-                        </div>
-                        <div style="text-align: right;">
-                            <div style="background: ${canScore ? '#4CAF50' : '#ff9800'}; color: white; padding: 8px 12px; border-radius: 15px; font-size: 0.9rem; margin-bottom: 5px;">
-                                ${canScore ? '✅ Score Entry Enabled' : '⚠️ Score Entry Disabled'}
-                            </div>
-                            <div style="font-size: 0.8rem; color: #666;">
-                                ${currentScorer ? `Identified as: ${currentScorer}` : 'Identity not set'}
-                            </div>
-                        </div>
-                    </div>
-                </div>
+            let leaderboardHtml = '';
+            mvpCandidates.forEach((candidate, index) => {
+                const photo = getPlayerPhoto(candidate.name);
+                const photoHtml = photo ? `<img src="${photo}" class="leaderboard-photo" alt="${candidate.name}">` : 
+                    '<div class="leaderboard-photo" style="background: var(--garnet); display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">' + candidate.name.charAt(0) + '</div>';
                 
-                <!-- Round Information Banner -->
-                <div style="background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%); color: white; padding: 15px; border-radius: 10px; margin-bottom: 20px; text-align: center;">
-                    <h3 style="margin: 0 0 5px 0;">${currentRound.name || 'Round Not Set'}</h3>
-                    <div style="opacity: 0.9;">${currentRound.date} • Scorekeepers: ${currentRound.scorekeepers.join(', ') || 'None assigned'}</div>
-                </div>
-            `;
-            
-            teamMatches.forEach((match, matchIndex) => {
-                html += `
-                    <h3 style="color: #782F40; margin: 30px 0 20px 0;">${match.team1Name || 'Team A'} vs ${match.team2Name || 'Team B'}</h3>
-                    
-                    <div class="scorecard-container">
-                        <table class="scorecard">
-                            <thead>
-                                <tr>
-                                    <th style="min-width: 150px;">Player</th>
-                                    ${Array.from({length: courseData.holes}, (_, i) => `<th>${i + 1}</th>`).join('')}
-                                    <th>Total</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <!-- Course Info -->
-                                <tr>
-                                    <td class="hole-info-cell">Par</td>
-                                    ${courseData.par.map(par => `<td class="par-cell">${par}</td>`).join('')}
-                                    <td class="par-cell">${courseData.par.reduce((sum, par) => sum + par, 0)}</td>
-                                </tr>
-                                <tr>
-                                    <td class="hole-info-cell">Handicap</td>
-                                    ${courseData.handicaps.map(hcp => `<td class="handicap-cell">${hcp}</td>`).join('')}
-                                    <td class="handicap-cell">-</td>
-                                </tr>
-                                
-                                <!-- Team 1 -->
-                                <tr>
-                                    <td class="team-label-cell">${match.team1Name || 'TEAM A'}</td>
-                                    ${Array.from({length: courseData.holes + 1}, () => '<td class="team-label-cell"></td>').join('')}
-                                </tr>
-                                
-                                ${match.team1.map((player, playerIndex) => {
-                                    const playerId = `match${match.id}-team1-${playerIndex}`;
-                                    
-                                    // Gross score row
-                                    let grossRow = `<tr>
-                                        <td class="player-name-cell">${player.name || 'Player'} (${player.handicap})</td>`;
-                                    
-                                    let grossTotal = 0;
-                                    for (let hole = 1; hole <= courseData.holes; hole++) {
-                                        const scoreKey = `${playerId}-hole${hole}`;
-                                        const currentScore = scores[scoreKey] || '';
-                                        grossRow += `<td class="gross-score-cell">
-                                            <input type="number" class="score-input ${!canScore ? 'restricted-input' : ''}" 
-                                                   value="${currentScore}" 
-                                                   onchange="updateScore('${scoreKey}', this.value)"
-                                                   min="1" max="15" placeholder=""
-                                                   ${!canScore ? 'disabled title="Score entry restricted to assigned scorekeepers"' : ''}>
-                                        </td>`;
-                                        if (currentScore) grossTotal += parseInt(currentScore);
-                                    }
-                                    grossRow += `<td class="total-cell">${grossTotal || ''}</td></tr>`;
-                                    
-                                    // Net score row
-                                    let netRow = `<tr>
-                                        <td class="player-name-cell">${player.name || 'Player'} (Net)</td>`;
-                                    
-                                    let netTotal = 0;
-                                    for (let hole = 1; hole <= courseData.holes; hole++) {
-                                        const scoreKey = `${playerId}-hole${hole}`;
-                                        const grossScore = scores[scoreKey];
-                                        const holeHandicap = courseData.handicaps[hole - 1];
-                                        const strokes = calculateStrokesForHole(player.handicap, holeHandicap);
-                                        
-                                        let netScore = '';
-                                        let cellClass = 'net-score-cell';
-                                        
-                                        if (grossScore && !isNaN(grossScore)) {
-                                            netScore = parseInt(grossScore) - strokes;
-                                            netTotal += netScore;
-                                        }
-                                        
-                                        if (strokes > 0) {
-                                            cellClass += ' stroke-hole';
-                                        }
-                                        
-                                        netRow += `<td class="${cellClass}" title="Gets ${strokes} stroke${strokes !== 1 ? 's' : ''}">${netScore}</td>`;
-                                    }
-                                    netRow += `<td class="total-cell">${netTotal || ''}</td></tr>`;
-                                    
-                                    return grossRow + netRow;
-                                }).join('')}
-                                
-                                <!-- Team 2 -->
-                                <tr>
-                                    <td class="team-label-cell">${match.team2Name || 'TEAM B'}</td>
-                                    ${Array.from({length: courseData.holes + 1}, () => '<td class="team-label-cell"></td>').join('')}
-                                </tr>
-                                
-                                ${match.team2.map((player, playerIndex) => {
-                                    const playerId = `match${match.id}-team2-${playerIndex}`;
-                                    
-                                    // Gross score row
-                                    let grossRow = `<tr>
-                                        <td class="player-name-cell">${player.name || 'Player'} (${player.handicap})</td>`;
-                                    
-                                    let grossTotal = 0;
-                                    for (let hole = 1; hole <= courseData.holes; hole++) {
-                                        const scoreKey = `${playerId}-hole${hole}`;
-                                        const currentScore = scores[scoreKey] || '';
-                                        grossRow += `<td class="gross-score-cell">
-                                            <input type="number" class="score-input ${!canScore ? 'restricted-input' : ''}" 
-                                                   value="${currentScore}" 
-                                                   onchange="updateScore('${scoreKey}', this.value)"
-                                                   min="1" max="15" placeholder=""
-                                                   ${!canScore ? 'disabled title="Score entry restricted to assigned scorekeepers"' : ''}>
-                                        </td>`;
-                                        if (currentScore) grossTotal += parseInt(currentScore);
-                                    }
-                                    grossRow += `<td class="total-cell">${grossTotal || ''}</td></tr>`;
-                                    
-                                    // Net score row
-                                    let netRow = `<tr>
-                                        <td class="player-name-cell">${player.name || 'Player'} (Net)</td>`;
-                                    
-                                    let netTotal = 0;
-                                    for (let hole = 1; hole <= courseData.holes; hole++) {
-                                        const scoreKey = `${playerId}-hole${hole}`;
-                                        const grossScore = scores[scoreKey];
-                                        const holeHandicap = courseData.handicaps[hole - 1];
-                                        const strokes = calculateStrokesForHole(player.handicap, holeHandicap);
-                                        
-                                        let netScore = '';
-                                        let cellClass = 'net-score-cell';
-                                        
-                                        if (grossScore && !isNaN(grossScore)) {
-                                            netScore = parseInt(grossScore) - strokes;
-                                            netTotal += netScore;
-                                        }        function renderTeams() {
-            const container = document.getElementById('teamsContainer');
-            if (!container) return;
-            
-            container.innerHTML = '';
-            
-            teamMatches.forEach(match => {
-                const matchDiv = document.createElement('div');
-                matchDiv.className = 'teams-setup';
-                matchDiv.innerHTML = `
-                    <div class="team-card">
-                        <div class="team-header">
-                            <input type="text" class="player-input" placeholder="Team Name" 
-                                   value="${match.team1Name || ''}" 
-                                   onchange="updateTeamName(${match.id}, 'team1Name', this.value)"
-                                   style="font-size: 1.2rem; font-weight: 600; color: #782F40; background: transparent; border: 2px dashed #782F40; text-align: center;">
-                            <button class="delete-btn" onclick="deleteTeamMatch(${match.id})">🗑️</button>
+                const position = index + 1;
+                const medal = position === 1 ? '🥇' : position === 2 ? '🥈' : '🥉';
+                
+                leaderboardHtml += `
+                    <div class="leaderboard-item">
+                        <div class="leaderboard-position">${medal} ${position}</div>
+                        ${photoHtml}
+                        <div class="leaderboard-info">
+                            <div class="leaderboard-name">${candidate.name}</div>
+                            <div class="leaderboard-score">
+                                ${candidate.teamName} | Avg: ${candidate.averageScore.toFixed(1)} | 
+                                Birdies+: ${candidate.birdiesAndBetter} | Pars: ${candidate.pars}
+                            </div>
                         </div>
-                        <div class="player-inputs">
-                            ${renderTeamPlayers(match.id, 'team1', match.team1)}
-                        </div>
-                    </div>
-                    
-                    <div class="team-card">
-                        <div class="team-header">
-                            <input type="text" class="player-input" placeholder="Team Name" 
-                                   value="${match.team2Name || ''}" 
-                                   onchange="updateTeamName(${match.id}, 'team2Name', this.value)"
-                                   style="font-size: 1.2rem; font-weight: 600; color: #2e8b57; background: transparent; border: 2px dashed #2e8b57; text-align: center;">
-                            <span class="team-vs">VS</span>
-                        </div>
-                        <div class="player-inputs">
-                            ${renderTeamPlayers(match.id, 'team2', match.team2)}
-                        </div>
-                    </div>
-                `;
-                container.appendChild(matchDiv);
-            });
-
-            // Add pairings section for match play
-            if (courseData.matchFormat !== '1v1') {
-                addPairingsSection();
-            }
-            
-            // Update round display
-            updateRoundDisplay();
-        }
-
-                                        
-                                        if (strokes > 0) {
-                                            cellClass += ' stroke-hole';
-                                        }
-                                        
-                                        netRow += `<td class="${cellClass}" title="Gets ${strokes} stroke${strokes !== 1 ? 's' : ''}">${netScore}</td>`;
-                                    }
-                                    netRow += `<td class="total-cell">${netTotal || ''}</td></tr>`;
-                                    
-                                    return grossRow + netRow;
-                                }).join('')}
-                                
-                            </tbody>
-                        </table>
                     </div>
                 `;
             });
             
-            container.innerHTML = html;
-        }
-
-        // Initialize the application
-        window.addEventListener('DOMContentLoaded', function() {
-            console.log('Page loaded - initializing v2.3 Round-Based Scorekeepers');
-            init();
-        });
-
-        </script>
-    </body>
-</html>
-                <!DOCTYPE html>
+            leaderboardContent.innerHTML = leaderboardHtml;
+        }<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Team Golf Scorecard</title>
+    <title>Brother Frank Cup</title>
     <style>
+        :root {
+            --garnet: #782F40;
+            --gold: #FFD700;
+            --light-garnet: #8B4054;
+            --dark-garnet: #5A2230;
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -255,2018 +200,1854 @@ function generateScorecard() {
         }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #782F40 0%, #8B1538 100%);
-            min-height: 100vh;
-            padding: 20px;
+            font-family: Arial, sans-serif;
+            background-color: #f5f5f5;
             color: #333;
         }
 
-        .container {
-            max-width: 1600px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 15px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.15);
-            overflow: hidden;
-        }
-
         .header {
-            background: linear-gradient(135deg, #782F40 0%, #8B1538 100%);
-            padding: 30px;
+            background: linear-gradient(135deg, var(--garnet), var(--dark-garnet));
+            color: var(--gold);
+            padding: 1rem;
             text-align: center;
-            color: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
 
         .header h1 {
-            font-size: 2.8rem;
-            margin-bottom: 10px;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        }
-
-        .header p {
-            font-size: 1.2rem;
-            opacity: 0.9;
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
         }
 
         .tabs {
             display: flex;
-            background: #f8f9fa;
-            border-bottom: 1px solid #dee2e6;
+            background: var(--garnet);
+            border-bottom: 3px solid var(--gold);
             overflow-x: auto;
-        }
-
-        .tab {
-            flex: 1;
-            min-width: 120px;
-            padding: 15px 20px;
-            background: none;
-            border: none;
-            cursor: pointer;
-            font-size: 1rem;
-            font-weight: 600;
-            transition: all 0.3s ease;
-            border-bottom: 3px solid transparent;
             white-space: nowrap;
         }
 
+        .tab {
+            background: var(--garnet);
+            color: var(--gold);
+            border: none;
+            padding: 1rem 1.5rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border-right: 1px solid var(--dark-garnet);
+            font-weight: bold;
+            min-width: 120px;
+        }
+
         .tab:hover {
-            background: #e9ecef;
+            background: var(--light-garnet);
         }
 
         .tab.active {
-            background: white;
-            border-bottom-color: #782F40;
-            color: #782F40;
+            background: var(--gold);
+            color: var(--garnet);
+            border-bottom: 3px solid var(--garnet);
+        }
+
+        .content {
+            padding: 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
         }
 
         .tab-content {
             display: none;
-            padding: 30px;
+            background: white;
+            border: 2px solid var(--garnet);
+            border-radius: 8px;
+            padding: 2rem;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }
 
         .tab-content.active {
             display: block;
         }
 
-        .setup-section {
-            background: #f8f9fa;
-            padding: 25px;
-            border-radius: 10px;
-            margin-bottom: 30px;
-            border-left: 5px solid #782F40;
+        .form-group {
+            margin-bottom: 1.5rem;
         }
 
-        .setup-section h3 {
-            color: #782F40;
-            margin-bottom: 20px;
-            font-size: 1.4rem;
-        }
-
-        .course-setup {
-            display: grid;
-            grid-template-columns: 1fr 1fr auto;
-            gap: 20px;
-            align-items: end;
-            margin-bottom: 25px;
-        }
-
-        .input-group {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .input-group label {
-            font-weight: 600;
-            margin-bottom: 8px;
-            color: #333;
-        }
-
-        .input-group input, .input-group select {
-            padding: 12px;
-            border: 2px solid #e9ecef;
-            border-radius: 8px;
-            font-size: 1rem;
-            transition: all 0.3s ease;
-        }
-
-        .input-group input:focus, .input-group select:focus {
-            outline: none;
-            border-color: #782F40;
-            box-shadow: 0 0 0 3px rgba(120, 47, 64, 0.1);
-        }
-
-        .match-format-section {
-            background: #e8f5e8;
-            padding: 20px;
-            border-radius: 10px;
-            margin: 20px 0;
-            border-left: 5px solid #4CAF50;
-        }
-
-        .match-format-section h4 {
-            color: #2e7d32;
-            margin-bottom: 15px;
-            font-size: 1.2rem;
-        }
-
-        .format-options {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 15px;
-            margin: 15px 0;
-        }
-
-        .format-option {
-            background: white;
-            padding: 15px;
-            border-radius: 8px;
-            border: 2px solid #e9ecef;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-
-        .format-option:hover {
-            border-color: #4CAF50;
-            transform: translateY(-2px);
-        }
-
-        .format-option.selected {
-            border-color: #4CAF50;
-            background: #f1f8e9;
-        }
-
-        .format-option input[type="radio"] {
-            margin-right: 10px;
-        }
-
-        .format-title {
-            font-weight: 600;
-            color: #2e7d32;
-            margin-bottom: 5px;
-        }
-
-        .format-description {
-            font-size: 0.9rem;
-            color: #666;
-        }
-
-        .hole-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
-            gap: 15px;
-            margin: 20px 0;
-        }
-
-        .hole-input-group {
-            text-align: center;
-            background: white;
-            padding: 15px;
-            border-radius: 8px;
-            border: 2px solid #e9ecef;
-            transition: all 0.3s ease;
-        }
-
-        .hole-input-group:hover {
-            border-color: #782F40;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        }
-
-        .hole-input-group label {
+        .form-group label {
             display: block;
-            font-size: 0.9rem;
-            font-weight: 600;
-            color: #666;
-            margin-bottom: 8px;
+            margin-bottom: 0.5rem;
+            font-weight: bold;
+            color: var(--garnet);
+        }
+
+        .form-group input, 
+        .form-group select, 
+        .form-group textarea {
+            width: 100%;
+            padding: 0.75rem;
+            border: 2px solid var(--garnet);
+            border-radius: 4px;
+            font-size: 1rem;
+        }
+
+        .btn {
+            background: var(--garnet);
+            color: var(--gold);
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            margin: 0.5rem 0.5rem 0.5rem 0;
+            transition: all 0.3s ease;
+        }
+
+        .btn:hover {
+            background: var(--dark-garnet);
+            transform: translateY(-1px);
+        }
+
+        .btn-danger {
+            background: #dc3545;
+        }
+
+        .btn-danger:hover {
+            background: #c82333;
+        }
+
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+            border: 2px solid var(--garnet);
+        }
+
+        .table th, 
+        .table td {
+            border: 1px solid var(--garnet);
+            padding: 0.5rem;
+            text-align: center;
+        }
+
+        .table th {
+            background: var(--garnet);
+            color: var(--gold);
+            font-weight: bold;
+        }
+
+        .table tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+
+        .course-setup, .team-setup {
+            display: grid;
+            gap: 1rem;
         }
 
         .hole-input {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 0.5rem;
+            align-items: center;
+            padding: 0.5rem;
+            border: 1px solid var(--garnet);
+            border-radius: 4px;
+            margin: 0.5rem 0;
+        }
+
+        .player-card {
+            border: 2px solid var(--garnet);
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 1rem 0;
+            background: white;
+        }
+
+        .scorecard-input {
+            width: 60px;
+            padding: 0.25rem;
+            margin: 0.25rem;
+            text-align: center;
+            border: 1px solid var(--garnet);
+            border-radius: 4px;
+        }
+
+        .password-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
             width: 100%;
-            padding: 10px;
-            border: 2px solid #e9ecef;
-            border-radius: 6px;
-            text-align: center;
-            font-size: 1rem;
-            font-weight: 600;
-            transition: all 0.3s ease;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
         }
 
-        .hole-input:focus {
-            outline: none;
-            border-color: #782F40;
-            background: #fdf7f0;
+        .modal-content {
+            position: relative;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            border: 3px solid var(--garnet);
+            max-width: 400px;
+            width: 90%;
         }
 
-        .teams-setup {
+        .match-card {
+            border: 2px solid var(--garnet);
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 1rem 0;
+            background: white;
+        }
+
+        .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-            gap: 25px;
-            margin: 25px 0;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+            margin: 1rem 0;
         }
 
-        .team-card {
-            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
-            padding: 25px;
-            border-radius: 12px;
-            border: 2px solid #e9ecef;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-            transition: all 0.3s ease;
+        .stat-card {
+            background: var(--gold);
+            border: 2px solid var(--garnet);
+            border-radius: 8px;
+            padding: 1rem;
+            text-align: center;
         }
 
-        .team-card:hover {
-            border-color: #782F40;
-            transform: translateY(-3px);
-            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
-        }
-
-        .team-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-
-        .team-header h4 {
-            color: #782F40;
-            font-size: 1.3rem;
-            margin: 0;
-        }
-
-        .team-vs {
-            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
-            color: white;
-            padding: 8px 16px;
-            border-radius: 20px;
+        .stat-number {
+            font-size: 2rem;
             font-weight: bold;
-            font-size: 0.9rem;
-            border: none;
+            color: var(--garnet);
         }
 
-        .player-inputs {
-            display: grid;
-            gap: 15px;
+        .stat-label {
+            color: var(--garnet);
+            font-weight: bold;
         }
 
-        .player-row {
-            display: grid;
-            grid-template-columns: 2fr 80px auto;
-            gap: 10px;
-            align-items: center;
-            margin-bottom: 10px;
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 1.8rem;
+            }
+
+            .tab {
+                padding: 0.75rem 1rem;
+                min-width: 100px;
+                font-size: 0.9rem;
+            }
+
+            .content {
+                padding: 1rem;
+            }
+
+            .hole-input {
+                grid-template-columns: 1fr;
+            }
+
+            .scorecard-input {
+                width: 50px;
+            }
         }
 
-        .player-input {
-            padding: 10px;
-            border: 2px solid #e9ecef;
-            border-radius: 6px;
-            font-size: 1rem;
-            transition: all 0.3s ease;
+        .photo-preview {
+            margin-top: 0.5rem;
+            max-width: 100px;
+            max-height: 100px;
+            border: 2px solid var(--garnet);
+            border-radius: 8px;
+            overflow: hidden;
         }
 
-        .player-input:focus {
-            outline: none;
-            border-color: #782F40;
-            background: #fdf7f0;
+        .photo-preview img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
         }
 
-        .handicap-input {
-            text-align: center;
-            font-weight: 600;
-        }
-
-        .player-photo {
+        .player-photo-display {
             width: 60px;
             height: 60px;
             border-radius: 50%;
             object-fit: cover;
-            border: 3px solid #782F40;
-            margin: 5px;
+            border: 2px solid var(--garnet);
+            margin-right: 10px;
         }
 
-        .action-btn {
-            background: linear-gradient(135deg, #782F40 0%, #8B1538 100%);
-            color: white;
-            border: none;
-            padding: 12px 25px;
-            border-radius: 8px;
-            font-size: 1rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            margin: 5px;
-        }
-
-        .action-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(120, 47, 64, 0.3);
-        }
-
-        .add-team-btn {
-            background: linear-gradient(135deg, #FFD700 0%, #FFC107 100%);
-            color: #212529;
-        }
-
-        .delete-btn {
-            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
-            padding: 8px 12px;
-            font-size: 0.9rem;
-        }
-
-        .scorecard-container {
-            overflow-x: auto;
-            margin: 25px 0;
-            border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-        }
-
-        .scorecard {
-            width: 100%;
-            border-collapse: collapse;
-            min-width: 1000px;
-            background: white;
-        }
-
-        .scorecard th {
-            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
-            color: white;
-            padding: 15px 8px;
-            text-align: center;
-            font-weight: 600;
-            border-right: 1px solid #34495e;
-            position: sticky;
-            top: 0;
-            z-index: 10;
-            font-size: 0.9rem;
-        }
-
-        .scorecard td {
-            padding: 12px 8px;
-            text-align: center;
-            border-bottom: 1px solid #e9ecef;
-            border-right: 1px solid #e9ecef;
-            transition: background-color 0.3s ease;
-            font-size: 0.9rem;
-        }
-
-        .scorecard tbody tr:hover {
+        .match-detail {
             background: #f8f9fa;
+            border: 1px solid var(--garnet);
+            border-radius: 4px;
+            padding: 1rem;
+            margin: 0.5rem 0;
         }
 
-        .player-name-cell {
-            background: linear-gradient(135deg, #FFD700 0%, #FFC107 100%);
-            color: #212529;
-            font-weight: 600;
-            text-align: left;
-            padding-left: 15px;
-            min-width: 150px;
+        .leaderboard {
+            background: linear-gradient(135deg, var(--gold), #FFA500);
+            border: 3px solid var(--garnet);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin: 1rem 0;
         }
 
-        .team-label-cell {
-            background: linear-gradient(135deg, #782F40 0%, #8B1538 100%);
-            color: white;
-            font-weight: 600;
+        .leaderboard h4 {
+            color: var(--garnet);
             text-align: center;
-            font-size: 1rem;
+            margin-bottom: 1rem;
+            font-size: 1.5rem;
         }
 
-        .hole-info-cell {
-            background: #ecf0f1;
-            font-weight: 600;
-            color: #2c3e50;
+        .leaderboard-item {
+            display: flex;
+            align-items: center;
+            padding: 0.75rem;
+            margin: 0.5rem 0;
+            background: white;
+            border: 2px solid var(--garnet);
+            border-radius: 6px;
         }
 
-        .par-cell {
-            background: linear-gradient(135deg, #782F40 0%, #8B1538 100%);
-            color: white;
-            font-weight: 600;
+        .leaderboard-position {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--garnet);
+            margin-right: 1rem;
+            min-width: 40px;
         }
 
-        .handicap-cell {
-            background: linear-gradient(135deg, #FFD700 0%, #FFC107 100%);
-            color: #212529;
-            font-weight: 600;
-        }
-
-        .gross-score-cell {
-            background: #ffffff;
-        }
-
-        .net-score-cell {
-            background: #fff8dc;
-            font-weight: 600;
-            color: #8B4513;
-        }
-
-        .stroke-hole {
-            background: #fff3cd !important;
-            border: 2px solid #FFD700 !important;
-        }
-
-        .score-input {
+        .leaderboard-photo {
             width: 50px;
-            padding: 8px;
-            border: 2px solid #e9ecef;
-            border-radius: 5px;
-            text-align: center;
-            font-size: 1rem;
-            font-weight: 600;
-            transition: all 0.3s ease;
+            height: 50px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid var(--garnet);
+            margin-right: 1rem;
         }
 
-        .score-input:focus {
-            outline: none;
-            border-color: #782F40;
-            background: #fdf7f0;
+        .leaderboard-info {
+            flex-grow: 1;
         }
 
-        .total-cell {
-            background: linear-gradient(135deg, #782F40 0%, #8B1538 100%) !important;
-            color: white;
+        .leaderboard-name {
             font-weight: bold;
+            color: var(--garnet);
             font-size: 1.1rem;
         }
 
-        .match-play-scorecard {
-            margin-top: 30px;
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 12px;
-            border: 2px solid #4CAF50;
-        }
-
-        .match-play-header {
-            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
-            color: white;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            text-align: center;
-        }
-
-        .match-play-header h3 {
-            margin: 0;
-            font-size: 1.4rem;
-        }
-
-        .match-play-table {
-            width: 100%;
-            border-collapse: collapse;
-            background: white;
-            border-radius: 8px;
-            overflow: hidden;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-
-        .match-play-table th {
-            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
-            color: white;
-            padding: 12px 8px;
-            text-align: center;
-            font-weight: 600;
+        .leaderboard-score {
+            color: #666;
             font-size: 0.9rem;
         }
 
-        .match-play-table td {
-            padding: 10px 8px;
-            text-align: center;
-            border-bottom: 1px solid #e9ecef;
-            border-right: 1px solid #e9ecef;
-        }
-
-        .hole-winner {
-            background: #c8e6c9 !important;
-            font-weight: bold;
-            color: #2e7d32;
-        }
-
-        .hole-tie {
-            background: #fff3e0 !important;
-            font-weight: bold;
-            color: #f57c00;
-        }
-
-        .nine-hole-bonus {
-            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%) !important;
-            color: white;
-            font-weight: bold;
-            font-size: 1.1rem;
-        }
-
-        .match-summary {
-            margin-top: 20px;
-            padding: 20px;
-            background: white;
-            border-radius: 10px;
-            border: 2px solid #4CAF50;
-        }
-
-        .match-summary h4 {
-            color: #4CAF50;
-            margin-bottom: 15px;
-        }
-
-        .summary-grid {
+        .team-selector {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
+            gap: 1rem;
+            margin: 1rem 0;
         }
 
-        .summary-card {
-            padding: 15px;
-            background: #f8f9fa;
-            border-radius: 8px;
+        .round-complete {
+            background: #d4edda;
+            border: 2px solid #28a745;
+            color: #155724;
+            padding: 1rem;
+            border-radius: 4px;
+            margin: 1rem 0;
             text-align: center;
-            border: 2px solid #e9ecef;
-        }
-
-        .summary-value {
-            font-size: 2rem;
             font-weight: bold;
-            color: #4CAF50;
-        }
-
-        .summary-label {
-            font-size: 0.9rem;
-            color: #666;
-            margin-top: 5px;
-        }
-
-        .pairing-section {
-            background: #e3f2fd;
-            padding: 20px;
-            border-radius: 10px;
-            margin: 20px 0;
-            border-left: 5px solid #2196f3;
-        }
-
-        .pairing-section h4 {
-            color: #1976d2;
-            margin-bottom: 15px;
-        }
-
-        .pairing-grid {
-            display: grid;
-            grid-template-columns: 1fr auto 1fr;
-            gap: 20px;
-            align-items: center;
-            margin: 15px 0;
-            padding: 15px;
-            background: white;
-            border-radius: 8px;
-            border: 2px solid #e9ecef;
-        }
-
-        .pairing-team {
-            text-align: center;
-        }
-
-        .pairing-players {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        .pairing-player {
-            background: #f8f9fa;
-            padding: 8px 12px;
-            border-radius: 6px;
-            border: 1px solid #e9ecef;
-            font-weight: 600;
-        }
-
-        .pairing-vs {
-            background: linear-gradient(135deg, #2196f3 0%, #1976d2 100%);
-            color: white;
-            padding: 10px 15px;
-            border-radius: 50%;
-            font-weight: bold;
-            font-size: 1.2rem;
-        }
-
-        .admin-indicator {
-            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
-            color: white;
-            padding: 8px 15px;
-            border-radius: 20px;
-            font-size: 0.9rem;
-            font-weight: 600;
-            display: inline-block;
-            margin-left: 15px;
-        }
-
-        .admin-section {
-            border: 2px dashed #4CAF50;
-            padding: 20px;
-            border-radius: 10px;
-            margin: 20px 0;
-            background: #f1f8e9;
-        }
-
-        .admin-section h4 {
-            color: #2e7d32;
-            margin-bottom: 15px;
-        }
-
-        .admin-login {
-            background: #fff3cd;
-            border: 2px solid #ffc107;
-            padding: 20px;
-            border-radius: 10px;
-            margin: 20px 0;
-            text-align: center;
-        }
-
-        .admin-login h4 {
-            color: #856404;
-            margin-bottom: 15px;
-        }
-
-        .admin-login input {
-            padding: 10px;
-            border: 2px solid #e9ecef;
-            border-radius: 5px;
-            margin: 0 10px;
-            font-size: 1rem;
-        }
-
-        .admin-login button {
-            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 5px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-
-        .admin-login button:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 3px 10px rgba(76, 175, 80, 0.3);
-        }
-
-        .restricted-section {
-            opacity: 0.6;
-            pointer-events: none;
-            position: relative;
-        }
-
-        .restricted-section::before {
-            content: "🔒 Admin Access Required";
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(244, 67, 54, 0.9);
-            color: white;
-            padding: 10px 20px;
-            border-radius: 20px;
-            font-weight: bold;
-            z-index: 10;
-            font-size: 0.9rem;
-        }
-
-        .scorekeeper-section {
-            background: #e8f5e8;
-            padding: 15px;
-            border-radius: 8px;
-            margin: 15px 0;
-            border-left: 4px solid #4CAF50;
-        }
-
-        .scorekeeper-selector {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin: 10px 0;
-            flex-wrap: wrap;
-        }
-
-        .scorekeeper-selector select {
-            padding: 8px;
-            border: 2px solid #e9ecef;
-            border-radius: 5px;
-            font-size: 0.9rem;
-            min-width: 150px;
-        }
-
-        .scorekeeper-badge {
-            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
-            color: white;
-            padding: 4px 12px;
-            border-radius: 15px;
-            font-size: 0.8rem;
-            font-weight: 600;
-        }
-
-        .scorer-assignment {
-            background: #e3f2fd;
-            padding: 15px;
-            border-radius: 8px;
-            margin: 15px 0;
-            border-left: 4px solid #2196f3;
-        }
-            .header h1 {
-                font-size: 2rem;
-            }
-            
-            .course-setup {
-                grid-template-columns: 1fr;
-            }
-            
-            .teams-setup {
-                grid-template-columns: 1fr;
-            }
-            
-            .hole-grid {
-                grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
-                gap: 10px;
-            }
-            
-            .scorecard th,
-            .scorecard td {
-                padding: 8px 4px;
-                font-size: 0.8rem;
-            }
-            
-            .score-input {
-                width: 40px;
-                padding: 6px;
-                font-size: 0.9rem;
-            }
-
-            .pairing-grid {
-                grid-template-columns: 1fr;
-                text-align: center;
-            }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>🏌️‍♂️ The Brother Frank Cup</h1>
-            <p>Professional Tournament Management • Match Play Competition</p>
-            <div style="position: absolute; top: 10px; right: 15px; background: rgba(255,255,255,0.2); padding: 5px 10px; border-radius: 15px; font-size: 0.8rem;">
-                v2.2 - Admin System
-            </div>
-            <div style="margin-top: 15px;">
-                <button onclick="toggleAdmin()" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); padding: 8px 15px; border-radius: 5px; cursor: pointer; font-size: 0.9rem; margin-right: 10px;">
-                    🔐 Admin Login
-                </button>
-                <span id="adminIndicator" style="display: none;" class="admin-indicator">
-                    ✅ Admin Mode Active
-                </span>
-            </div>
-        </div>
+    <div class="header">
+        <h1>Brother Frank Cup</h1>
+        <p>Golf Tournament Management System</p>
+    </div>
 
-        <div class="tabs">
-            <button class="tab active" onclick="showTab('setup')">Course Setup</button>
-            <button class="tab" onclick="showTab('teams')">Team Setup</button>
-            <button class="tab" onclick="showTab('scorecard')">Scorecard</button>
-            <button class="tab" onclick="showTab('matchplay')">Live Scoring</button>
-            <button class="tab" onclick="showTab('results')">Results</button>
-        </div>
+    <div class="tabs">
+        <button class="tab active" onclick="showTab('course-setup')">Course Setup</button>
+        <button class="tab" onclick="showTab('team-setup')">Team Setup</button>
+        <button class="tab" onclick="showTab('scorecard')">Scorecard</button>
+        <button class="tab" onclick="showTab('live-scoring')">Live Scoring</button>
+        <button class="tab" onclick="showTab('overall-scoring')">Overall Scoring</button>
+        <button class="tab" onclick="showTab('player-stats')">Player Statistics</button>
+        <button class="tab" onclick="showTab('tournament-history')">Tournament History</button>
+    </div>
 
+    <div class="content">
         <!-- Course Setup Tab -->
-        <div id="setup" class="tab-content active">
-            <div class="setup-section">
-                <h3>🏌️ Course Information</h3>
-                <div class="course-setup">
-                    <div class="input-group">
-                        <label>Course Name:</label>
-                        <input type="text" id="courseName" value="Golf Course" placeholder="Enter course name">
-                    </div>
-                    <div class="input-group">
-                        <label>Number of Holes:</label>
-                        <select id="numHoles" onchange="setupHoles()">
-                            <option value="9">9 Holes</option>
-                            <option value="18" selected>18 Holes</option>
-                        </select>
-                    </div>
-                    <button class="action-btn" onclick="setupHoles(); console.log('Setup Holes clicked - v2.1');">Setup Holes</button>
-                </div>
-                
-                <div id="validationMessage"></div>
-                
-                <h4 style="color: #782F40; margin: 25px 0 15px 0; font-size: 1.3rem;">Hole Configuration</h4>
-                <div class="hole-grid" id="holeGrid">
-                    <!-- Holes will be generated here -->
-                </div>
+        <div id="course-setup" class="tab-content active">
+            <h2>Golf Course Setup (No Fun Banning Access Only)</h2>
+            <div class="form-group">
+                <label for="course-name">Course Name:</label>
+                <input type="text" id="course-name" placeholder="Enter course name">
             </div>
-
-            <!-- Match Format Selection -->
-            <div class="match-format-section">
-                <h4>🎯 Match Play Format</h4>
-                <p style="color: #666; margin-bottom: 15px;">Select how matches will be played and scored</p>
-                
-                <div class="format-options">
-                    <div class="format-option selected" onclick="selectMatchFormat('2v2-total')">
-                        <input type="radio" name="matchFormat" value="2v2-total" checked>
-                        <div class="format-title">2v2 Total Net</div>
-                        <div class="format-description">Both players' net scores added together per hole</div>
-                    </div>
-                    
-                    <div class="format-option" onclick="selectMatchFormat('2v2-low')">
-                        <input type="radio" name="matchFormat" value="2v2-low">
-                        <div class="format-title">2v2 Low Net</div>
-                        <div class="format-description">Best net score from each team per hole</div>
-                    </div>
-                    
-                    <div class="format-option" onclick="selectMatchFormat('1v1')">
-                        <input type="radio" name="matchFormat" value="1v1">
-                        <div class="format-title">1v1 Match Play</div>
-                        <div class="format-description">Individual head-to-head matches</div>
-                    </div>
-                </div>
-
-                <div style="background: #fff3cd; padding: 15px; border-radius: 8px; margin-top: 15px;">
-                    <strong>Match Play Scoring:</strong><br>
-                    • 2 points for winning a hole<br>
-                    • 1 point for tying a hole<br>
-                    • 2-point bonus for winning each 9-hole segment<br>
-                    • 1 point each for tied 9-hole segments
-                </div>
+            <div class="form-group">
+                <label for="tournament-year">Tournament Year:</label>
+                <input type="number" id="tournament-year" placeholder="2024" min="2020" max="2050">
             </div>
+            <h3>Hole Setup</h3>
+            <div id="holes-container">
+                <!-- Holes will be dynamically generated -->
+            </div>
+            <button class="btn" onclick="generateHoles()">Generate 18 Holes</button>
+            <button class="btn" onclick="saveCourse()">Save Course</button>
+            <button class="btn btn-danger" onclick="deleteCourse()">Delete Course</button>
+            <div id="saved-courses"></div>
         </div>
 
         <!-- Team Setup Tab -->
-        <div id="teams" class="tab-content">
-            <div class="setup-section">
-                <h3>👥 Team Configuration</h3>
-                <p style="margin-bottom: 20px; color: #666;">Set up your teams and match pairings for the selected format.</p>
-                
-                <div style="margin-bottom: 25px;">
-                    <button class="action-btn add-team-btn" onclick="addTeamMatch()">+ Add Team Match</button>
+        <div id="team-setup" class="tab-content">
+            <h2>Team Setup (No Fun Banning Access Only)</h2>
+            <div class="form-group">
+                <label for="team-name">Team Name:</label>
+                <input type="text" id="team-name" placeholder="Enter team name">
+            </div>
+            <h3>Team Players</h3>
+            <div id="team-players-container">
+                <div class="player-card">
+                    <div class="form-group">
+                        <label>Player 1 Name:</label>
+                        <input type="text" class="player-name" placeholder="Player name">
+                    </div>
+                    <div class="form-group">
+                        <label>Player 1 Handicap:</label>
+                        <input type="number" class="player-handicap" placeholder="Handicap" min="0" max="36">
+                    </div>
+                    <div class="form-group">
+                        <label>Player 1 Photo:</label>
+                        <input type="file" class="player-photo" accept="image/*" onchange="handlePhotoUpload(this, 0)">
+                        <div class="photo-preview" id="photo-preview-0"></div>
+                    </div>
                 </div>
-                
-                <div id="teamsContainer">
-                    <!-- Team cards will be generated here -->
+                <div class="player-card">
+                    <div class="form-group">
+                        <label>Player 2 Name:</label>
+                        <input type="text" class="player-name" placeholder="Player name">
+                    </div>
+                    <div class="form-group">
+                        <label>Player 2 Handicap:</label>
+                        <input type="number" class="player-handicap" placeholder="Handicap" min="0" max="36">
+                    </div>
+                    <div class="form-group">
+                        <label>Player 2 Photo:</label>
+                        <input type="file" class="player-photo" accept="image/*" onchange="handlePhotoUpload(this, 1)">
+                        <div class="photo-preview" id="photo-preview-1"></div>
+                    </div>
+                </div>
+                <div class="player-card">
+                    <div class="form-group">
+                        <label>Player 3 Name:</label>
+                        <input type="text" class="player-name" placeholder="Player name">
+                    </div>
+                    <div class="form-group">
+                        <label>Player 3 Handicap:</label>
+                        <input type="number" class="player-handicap" placeholder="Handicap" min="0" max="36">
+                    </div>
+                    <div class="form-group">
+                        <label>Player 3 Photo:</label>
+                        <input type="file" class="player-photo" accept="image/*" onchange="handlePhotoUpload(this, 2)">
+                        <div class="photo-preview" id="photo-preview-2"></div>
+                    </div>
+                </div>
+                <div class="player-card">
+                    <div class="form-group">
+                        <label>Player 4 Name:</label>
+                        <input type="text" class="player-name" placeholder="Player name">
+                    </div>
+                    <div class="form-group">
+                        <label>Player 4 Handicap:</label>
+                        <input type="number" class="player-handicap" placeholder="Handicap" min="0" max="36">
+                    </div>
+                    <div class="form-group">
+                        <label>Player 4 Photo:</label>
+                        <input type="file" class="player-photo" accept="image/*" onchange="handlePhotoUpload(this, 3)">
+                        <div class="photo-preview" id="photo-preview-3"></div>
+                    </div>
                 </div>
             </div>
+            <button class="btn" onclick="saveTeam()">Save Team</button>
+            <button class="btn btn-danger" onclick="deleteTeam()">Delete Team</button>
+            <div id="saved-teams"></div>
         </div>
 
         <!-- Scorecard Tab -->
         <div id="scorecard" class="tab-content">
-            <div id="scorecardContent">
+            <h2>Scorecard Entry</h2>
+            <div class="form-group">
+                <label for="round-name">Round Name:</label>
+                <input type="text" id="round-name" placeholder="e.g., Thursday AM">
+            </div>
+            <div class="form-group">
+                <label for="match-type">Match Type:</label>
+                <select id="match-type" onchange="setupMatchType()">
+                    <option value="">Select Match Type</option>
+                    <option value="2v2-best">2 vs 2 - Best Net Score</option>
+                    <option value="2v2-combined">2 vs 2 - Combined Net Score</option>
+                    <option value="1v1">1 vs 1 Individual</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="scorer-password">Scorer Password:</label>
+                <input type="password" id="scorer-password" placeholder="Enter scoring password">
+            </div>
+            <button class="btn" onclick="verifyScorer()">Start Scoring</button>
+            <div id="scorecard-container" class="hidden">
                 <!-- Scorecard will be generated here -->
             </div>
         </div>
 
         <!-- Live Scoring Tab -->
-        <div id="matchplay" class="tab-content">
-            <div id="matchPlayContent">
-                <!-- Live scoring results will be generated here -->
+        <div id="live-scoring" class="tab-content">
+            <h2>Live Scoring</h2>
+            <div id="live-matches-container">
+                <p>No active matches. Start scoring in the Scorecard tab to see live updates here.</p>
             </div>
         </div>
 
-        <!-- Results Tab -->
-        <div id="results" class="tab-content">
-            <h2>Match Results & Standings</h2>
-            <div id="resultsContent">
-                <!-- Results will be calculated here -->
+        <!-- Overall Scoring Tab -->
+        <div id="overall-scoring" class="tab-content">
+            <h2>Overall Tournament Scoring</h2>
+            <div class="form-group">
+                <label for="mvp-select">Tournament MVP (No Fun Banning Access Only):</label>
+                <select id="mvp-select">
+                    <option value="">Select MVP</option>
+                </select>
+                <button class="btn" onclick="setMVP()">Set MVP</button>
+            </div>
+            
+            <!-- MVP Leaderboard -->
+            <div id="mvp-leaderboard" class="leaderboard">
+                <h4>🏆 MVP Leaderboard - Top 3 Candidates</h4>
+                <div id="leaderboard-content">
+                    <p>Leaderboard will update as rounds are completed</p>
+                </div>
+            </div>
+            
+            <h3>Tournament Match Results</h3>
+            <div id="tournament-matches-container">
+                <!-- Detailed match results will be displayed here -->
+            </div>
+            
+            <h3>Overall Points Summary</h3>
+            <div id="overall-scores-container">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Round</th>
+                            <th>Team 1 Points</th>
+                            <th>Team 2 Points</th>
+                            <th>Max Points</th>
+                        </tr>
+                    </thead>
+                    <tbody id="overall-scores-body">
+                        <tr>
+                            <td colspan="4">No completed rounds yet</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div style="text-align: center; margin: 2rem 0;">
+                    <h3>221 Points Needed to Win</h3>
+                    <div id="team-totals"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Player Statistics Tab -->
+        <div id="player-stats" class="tab-content">
+            <h2>Player Statistics</h2>
+            <div id="player-stats-container">
+                <p>Player statistics will appear here after rounds are completed.</p>
+            </div>
+        </div>
+
+        <!-- Tournament History Tab -->
+        <div id="tournament-history" class="tab-content">
+            <h2>Tournament History</h2>
+            <button class="btn" onclick="finalizeTournament()">Finalize Current Tournament (No Fun Banning Access Only)</button>
+            <div id="tournament-history-container">
+                <p>Tournament history will appear here after tournaments are finalized.</p>
             </div>
         </div>
     </div>
 
+    <!-- Password Modal -->
+    <div id="password-modal" class="password-modal">
+        <div class="modal-content">
+            <h3>No Fun Banning Access Required</h3>
+            <div class="form-group">
+                <label for="admin-password">Enter No Fun Banning Password:</label>
+                <input type="password" id="admin-password" placeholder="Password">
+            </div>
+            <button class="btn" onclick="verifyAdmin()">Submit</button>
+            <button class="btn btn-danger" onclick="closePasswordModal()">Cancel</button>
+        </div>
+    </div>
+
     <script>
-        console.log('JavaScript loading - v2.3 Round-Based Scorekeepers');
-        
-        // Admin authentication
-        let isAdmin = false;
-        const ADMIN_PASSWORD = 'Pikes1623'; // Admin password
-        
-        // Round information
-        let currentRound = {
-            id: Date.now(),
-            name: '',
-            date: new Date().toISOString().split('T')[0],
-            scorekeepers: [] // Array of authorized scorekeepers for this round
-        };
-        
-        // Current device scorer identity
-        let currentScorer = localStorage.getItem('currentScorer') || null;
-        
-        // Course data
-        let courseData = {
-            name: 'Golf Course',
-            holes: 18,
-            par: [4, 5, 4, 3, 4, 5, 4, 3, 4, 4, 5, 4, 3, 4, 5, 4, 3, 4],
-            handicaps: [5, 11, 1, 13, 17, 15, 3, 7, 9, 8, 16, 10, 4, 2, 18, 12, 14, 6],
-            matchFormat: '2v2-total'
-        };
+        // Global variables
+        let courses = JSON.parse(localStorage.getItem('courses') || '[]');
+        let teams = JSON.parse(localStorage.getItem('teams') || '[]');
+        let rounds = JSON.parse(localStorage.getItem('rounds') || '[]');
+        let tournaments = JSON.parse(localStorage.getItem('tournaments') || '[]');
+        let playerPhotos = JSON.parse(localStorage.getItem('playerPhotos') || '{}');
+        let currentUser = null;
+        let currentRound = null;
 
-        // Team matches data
-        let teamMatches = [];
+        const ADMIN_PASSWORD = 'Pikes1623';
+        const SCORER_PASSWORD = 'PikesGolf';
 
-        // Scores data
-        let scores = {};
-
-        // Match play pairings
-        let matchPairings = {};
-
-        // Make functions globally accessible
-        window.setupHoles = function() {
-            console.log('setupHoles() function called - v2.1');
-            
-            const numHoles = parseInt(document.getElementById('numHoles').value);
-            const courseName = document.getElementById('courseName').value;
-            
-            console.log('Number of holes:', numHoles);
-            console.log('Course name:', courseName);
-            
-            courseData.name = courseName;
-            courseData.holes = numHoles;
-            
-            // Adjust arrays if holes changed
-            if (numHoles !== courseData.par.length) {
-                if (numHoles === 9) {
-                    courseData.par = [4, 5, 4, 3, 4, 5, 4, 3, 4];
-                    courseData.handicaps = [1, 3, 5, 7, 9, 2, 4, 6, 8];
-                } else {
-                    courseData.par = [4, 5, 4, 3, 4, 5, 4, 3, 4, 4, 5, 4, 3, 4, 5, 4, 3, 4];
-                    courseData.handicaps = [5, 11, 1, 13, 17, 15, 3, 7, 9, 8, 16, 10, 4, 2, 18, 12, 14, 6];
-                }
+        // Photo handling functions
+        function handlePhotoUpload(input, playerIndex) {
+            if (input.files && input.files[0]) {
+                const file = input.files[0];
+                const reader = new FileReader();
+                
+                reader.onload = function(e) {
+                    const photoData = e.target.result;
+                    const preview = document.getElementById(`photo-preview-${playerIndex}`);
+                    preview.innerHTML = `<img src="${photoData}" alt="Player photo">`;
+                    
+                    // Store photo temporarily
+                    if (!window.tempPhotos) window.tempPhotos = {};
+                    window.tempPhotos[playerIndex] = photoData;
+                };
+                
+                reader.readAsDataURL(file);
             }
-            
-            console.log('Updated courseData:', courseData);
-            
-            renderHoleGrid();
-            validateCourse();
-            
-            console.log('setupHoles() completed');
-        };
+        }
 
-        window.showTab = function(tabName) {
-            console.log('showTab called:', tabName);
-            
+        function savePlayerPhoto(playerName, photoData) {
+            if (photoData) {
+                playerPhotos[playerName] = photoData;
+                localStorage.setItem('playerPhotos', JSON.stringify(playerPhotos));
+            }
+        }
+
+        function getPlayerPhoto(playerName) {
+            return playerPhotos[playerName] || null;
+        }
+
+        // Tab functionality
+        function showTab(tabId) {
+            // Hide all tab contents
             document.querySelectorAll('.tab-content').forEach(content => {
                 content.classList.remove('active');
             });
             
+            // Remove active class from all tabs
             document.querySelectorAll('.tab').forEach(tab => {
                 tab.classList.remove('active');
             });
             
-            document.getElementById(tabName).classList.add('active');
+            // Show selected tab content
+            document.getElementById(tabId).classList.add('active');
+            
+            // Add active class to clicked tab
             event.target.classList.add('active');
             
-            if (tabName === 'scorecard') {
-                generateScorecard();
-            } else if (tabName === 'matchplay') {
-                generateMatchPlayView();
-            } else if (tabName === 'results') {
-                calculateResults();
-            }
-        };
-
-        window.selectMatchFormat = function(format) {
-            console.log('selectMatchFormat called:', format);
-            courseData.matchFormat = format;
-            
-            // Update visual selection
-            document.querySelectorAll('.format-option').forEach(option => {
-                option.classList.remove('selected');
-            });
-            event.currentTarget.classList.add('selected');
-            
-            // Update radio button
-            document.querySelector(`input[value="${format}"]`).checked = true;
-            
-            // Regenerate teams based on new format
-            setupDefaultTeams();
-        };
-
-        window.addTeamMatch = function() {
-            console.log('addTeamMatch called');
-            const newId = Math.max(...teamMatches.map(t => t.id), 0) + 1;
-            const playersPerTeam = getPlayersPerTeam();
-            
-            let team1Players = [];
-            let team2Players = [];
-            
-            for (let i = 0; i < playersPerTeam; i++) {
-                team1Players.push({name: '', handicap: 0});
-                team2Players.push({name: '', handicap: 0});
+            // Check if admin access is required
+            if (['course-setup', 'team-setup'].includes(tabId)) {
+                checkAdminAccess(tabId);
             }
             
-            teamMatches.push({
-                id: newId,
-                team1Name: '',
-                team2Name: '',
-                team1: team1Players,
-                team2: team2Players
-            });
-            renderTeams();
-        };
+            // Refresh content
+            refreshTabContent(tabId);
+        }
 
-        window.updateTeamName = function(matchId, teamKey, name) {
-            const match = teamMatches.find(m => m.id === matchId);
-            match[teamKey] = name;
-        };
-
-        window.updatePlayerName = function(matchId, teamName, playerIndex, name) {
-            const match = teamMatches.find(m => m.id === matchId);
-            match[teamName][playerIndex].name = name;
-        };
-
-        window.updatePlayerHandicap = function(matchId, teamName, playerIndex, handicap) {
-            const match = teamMatches.find(m => m.id === matchId);
-            match[teamName][playerIndex].handicap = parseInt(handicap) || 0;
-        };
-
-        window.deleteTeamMatch = function(matchId) {
-            if (confirm('Delete this team match?')) {
-                teamMatches = teamMatches.filter(m => m.id !== matchId);
-                renderTeams();
-                
-                // Clean up scores
-                Object.keys(scores).forEach(key => {
-                    if (key.startsWith(`match${matchId}-`)) {
-                        delete scores[key];
-                    }
-                });
+        function checkAdminAccess(tabId) {
+            if (currentUser !== 'admin') {
+                document.getElementById('password-modal').style.display = 'block';
+                document.getElementById('password-modal').dataset.targetTab = tabId;
             }
-        };
+        }
 
-        window.updatePar = function(holeIndex, value) {
-            courseData.par[holeIndex] = parseInt(value) || 4;
-            validateCourse();
-        };
-
-        window.updateHandicap = function(holeIndex, value) {
-            courseData.handicaps[holeIndex] = parseInt(value) || 1;
-            validateCourse();
-        };
-
-        window.updateScore = function(scoreKey, value) {
-            if (value === '' || value === null) {
-                delete scores[scoreKey];
+        function verifyAdmin() {
+            const password = document.getElementById('admin-password').value;
+            if (password === ADMIN_PASSWORD) {
+                currentUser = 'admin';
+                closePasswordModal();
             } else {
-                scores[scoreKey] = parseInt(value);
+                alert('Incorrect password');
             }
-            generateScorecard(); // Refresh to update net scores and totals
+        }
+
+        function closePasswordModal() {
+            document.getElementById('password-modal').style.display = 'none';
+            document.getElementById('admin-password').value = '';
+            if (currentUser !== 'admin') {
+                showTab('live-scoring');
+            }
+        }
+
+        function verifyScorer() {
+            const password = document.getElementById('scorer-password').value;
+            if (password === SCORER_PASSWORD) {
+                currentUser = 'scorer';
+                setupScorecardEntry();
+            } else {
+                alert('Incorrect scorer password');
+            }
+        }
+
+        // Course Setup Functions
+        function generateHoles() {
+            const container = document.getElementById('holes-container');
+            container.innerHTML = `
+                <h4>Front 9 (Holes 1-9)</h4>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Hole</th>
+                            ${Array.from({length: 9}, (_, i) => `<th>${i + 1}</th>`).join('')}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Par</strong></td>
+                            ${Array.from({length: 9}, (_, i) => `<td><input type="number" placeholder="Par" min="3" max="5" class="hole-par" data-hole="${i + 1}" style="width: 60px;"></td>`).join('')}
+                        </tr>
+                        <tr>
+                            <td><strong>Handicap</strong></td>
+                            ${Array.from({length: 9}, (_, i) => `<td><input type="number" placeholder="Hdcp" min="1" max="18" class="hole-handicap" data-hole="${i + 1}" style="width: 60px;"></td>`).join('')}
+                        </tr>
+                    </tbody>
+                </table>
+                
+                <h4>Back 9 (Holes 10-18)</h4>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Hole</th>
+                            ${Array.from({length: 9}, (_, i) => `<th>${i + 10}</th>`).join('')}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Par</strong></td>
+                            ${Array.from({length: 9}, (_, i) => `<td><input type="number" placeholder="Par" min="3" max="5" class="hole-par" data-hole="${i + 10}" style="width: 60px;"></td>`).join('')}
+                        </tr>
+                        <tr>
+                            <td><strong>Handicap</strong></td>
+                            ${Array.from({length: 9}, (_, i) => `<td><input type="number" placeholder="Hdcp" min="1" max="18" class="hole-handicap" data-hole="${i + 10}" style="width: 60px;"></td>`).join('')}
+                        </tr>
+                    </tbody>
+                </table>
+            `;
+        }
+
+        function saveCourse() {
+            const courseName = document.getElementById('course-name').value;
+            const tournamentYear = document.getElementById('tournament-year').value;
             
-        window.updateScore = function(scoreKey, value) {
-            // Extract match ID from scoreKey to check permissions
-            const matchIdMatch = scoreKey.match(/match(\d+)/);
-            if (matchIdMatch) {
-                const matchId = matchIdMatch[1];
-                if (!canEditScores(matchId)) {
-                    alert('You do not have permission to enter scores for this match. Contact the admin for access.');
+            if (!courseName || !tournamentYear) {
+                alert('Please enter course name and tournament year');
+                return;
+            }
+
+            const holes = [];
+            for (let i = 1; i <= 18; i++) {
+                const par = document.querySelector(`.hole-par[data-hole="${i}"]`).value;
+                const handicap = document.querySelector(`.hole-handicap[data-hole="${i}"]`).value;
+                
+                if (!par || !handicap) {
+                    alert(`Please complete hole ${i} information`);
                     return;
                 }
-            }
-            
-            if (value === '' || value === null) {
-                delete scores[scoreKey];
-            } else {
-                scores[scoreKey] = parseInt(value);
-            }
-            generateScorecard(); // Refresh to update net scores and totals
-            
-            // Auto-save current scores
-            localStorage.setItem('currentScores', JSON.stringify(scores));
-        };
-        function init() {
-            console.log('init() called - v2.1');
-            setupHoles();
-            setupDefaultTeams();
-            
-            // Load saved scores if they exist
-            const savedScores = localStorage.getItem('currentScores');
-            if (savedScores) {
-                scores = JSON.parse(savedScores);
-            }
-        }
-
-        function getPlayersPerTeam() {
-            switch (courseData.matchFormat) {
-                case '2v2-total':
-                case '2v2-low':
-                    return 2;
-                case '1v1':
-                    return 1;
-                default:
-                    return 2;
-            }
-        }
-
-        function setupDefaultTeams() {
-            const playersPerTeam = getPlayersPerTeam();
-            
-            let team1Players = [];
-            let team2Players = [];
-            
-            for (let i = 0; i < playersPerTeam; i++) {
-                team1Players.push({name: `Player ${i + 1}`, handicap: 10 + (i * 5)});
-                team2Players.push({name: `Player ${i + 1 + playersPerTeam}`, handicap: 12 + (i * 5)});
-            }
-            
-            teamMatches = [
-                {
-                    id: 1,
-                    team1Name: 'Team Alpha',
-                    team2Name: 'Team Bravo',
-                    team1: team1Players,
-                    team2: team2Players
-                }
-            ];
-            renderTeams();
-        }
-
-        function renderHoleGrid() {
-            console.log('renderHoleGrid() called');
-            const grid = document.getElementById('holeGrid');
-            if (!grid) {
-                console.error('holeGrid element not found!');
-                return;
-            }
-            
-            grid.innerHTML = '';
-            
-            for (let i = 0; i < courseData.holes; i++) {
-                const holeDiv = document.createElement('div');
-                holeDiv.className = 'hole-input-group';
-                holeDiv.innerHTML = `
-                    <label style="color: #782F40; font-weight: 600;">Hole ${i + 1}</label>
-                    <div style="margin-bottom: 8px;">
-                        <label style="font-size: 0.8rem; color: #782F40; margin-bottom: 3px; display: block; font-weight: 600;">Par</label>
-                        <input type="number" class="hole-input" value="${courseData.par[i]}" 
-                               min="3" max="5" onchange="updatePar(${i}, this.value)"
-                               style="border-color: #782F40; background: white;">
-                    </div>
-                    <div>
-                        <label style="font-size: 0.8rem; color: #782F40; margin-bottom: 3px; display: block; font-weight: 600;">Net</label>
-                        <input type="number" class="hole-input" value="${courseData.handicaps[i]}" 
-                               min="1" max="${courseData.holes}" onchange="updateHandicap(${i}, this.value)"
-                               style="border-color: #782F40; background: white;">
-                    </div>
-                `;
-                grid.appendChild(holeDiv);
-            }
-            console.log('renderHoleGrid() completed - added', courseData.holes, 'holes');
-        }
-
-        function validateCourse() {
-            const validationDiv = document.getElementById('validationMessage');
-            const errors = [];
-            
-            // Check par values
-            const invalidPars = courseData.par.filter(par => par < 3 || par > 5);
-            if (invalidPars.length > 0) {
-                errors.push('Par values must be between 3 and 5');
-            }
-            
-            // Check handicap uniqueness and range
-            const handicapSet = new Set(courseData.handicaps);
-            if (handicapSet.size !== courseData.holes) {
-                errors.push('Each hole must have a unique handicap rating');
-            }
-            
-            const validRange = Array.from({length: courseData.holes}, (_, i) => i + 1);
-            const missingHandicaps = validRange.filter(h => !courseData.handicaps.includes(h));
-            if (missingHandicaps.length > 0) {
-                errors.push(`Missing handicap ratings: ${missingHandicaps.join(', ')}`);
-            }
-            
-            if (errors.length > 0) {
-                validationDiv.innerHTML = `<div style="background: #ffebee; color: #c62828; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #c62828;">${errors.join('<br>')}</div>`;
-            } else {
-                validationDiv.innerHTML = '';
-            }
-        }
-
-        function renderTeams() {
-            const container = document.getElementById('teamsContainer');
-            if (!container) return;
-            
-            container.innerHTML = '';
-            
-            teamMatches.forEach(match => {
-                const matchDiv = document.createElement('div');
-                matchDiv.className = 'teams-setup';
-                matchDiv.innerHTML = `
-                    <div class="team-card">
-                        <div class="team-header">
-                            <input type="text" class="player-input" placeholder="Team Name" 
-                                   value="${match.team1Name || ''}" 
-                                   onchange="updateTeamName(${match.id}, 'team1Name', this.value)"
-                                   style="font-size: 1.2rem; font-weight: 600; color: #782F40; background: transparent; border: 2px dashed #782F40; text-align: center;">
-                            <button class="delete-btn" onclick="deleteTeamMatch(${match.id})">🗑️</button>
-                        </div>
-                        <div class="player-inputs">
-                            ${renderTeamPlayers(match.id, 'team1', match.team1)}
-                        </div>
-                    </div>
-                    
-                    <div class="team-card">
-                        <div class="team-header">
-                            <input type="text" class="player-input" placeholder="Team Name" 
-                                   value="${match.team2Name || ''}" 
-                                   onchange="updateTeamName(${match.id}, 'team2Name', this.value)"
-                                   style="font-size: 1.2rem; font-weight: 600; color: #2e8b57; background: transparent; border: 2px dashed #2e8b57; text-align: center;">
-                            <span class="team-vs">VS</span>
-                        </div>
-                        <div class="player-inputs">
-                            ${renderTeamPlayers(match.id, 'team2', match.team2)}
-                        </div>
-                    </div>
-                `;
-                container.appendChild(matchDiv);
-            });
-
-            // Add pairings section for match play
-            if (courseData.matchFormat !== '1v1') {
-                addPairingsSection();
-            }
-        }
-
-        function renderTeamPlayers(matchId, teamName, players) {
-            return players.map((player, index) => `
-                <div class="player-row">
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <div class="player-photo" style="background: #e9ecef; display: flex; align-items: center; justify-content: center; color: #666;">👤</div>
-                        <input type="text" class="player-input" placeholder="Player ${index + 1} Name" value="${player.name}"
-                               onchange="updatePlayerName(${matchId}, '${teamName}', ${index}, this.value)">
-                    </div>
-                    <input type="number" class="player-input handicap-input" placeholder="HCP" value="${player.handicap || ''}"
-                           min="0" max="54" onchange="updatePlayerHandicap(${matchId}, '${teamName}', ${index}, this.value)">
-                    <div></div>
-                </div>
-            `).join('');
-        }
-
-        function addPairingsSection() {
-            const container = document.getElementById('teamsContainer');
-            const pairingsDiv = document.createElement('div');
-            pairingsDiv.className = 'pairing-section';
-            pairingsDiv.innerHTML = `
-                <h4>🎯 Match Pairings for ${courseData.matchFormat.toUpperCase()}</h4>
-                <p style="color: #666; margin-bottom: 15px;">These pairings will be used for match play scoring</p>
-                <div id="pairingsGrid">
-                    ${generatePairingsDisplay()}
-                </div>
-            `;
-            container.appendChild(pairingsDiv);
-        }
-
-        function generatePairingsDisplay() {
-            let html = '';
-            teamMatches.forEach(match => {
-                html += `
-                    <div class="pairing-grid">
-                        <div class="pairing-team">
-                            <h5>${match.team1Name || 'Team A'}</h5>
-                            <div class="pairing-players">
-                                ${match.team1.map(player => `<div class="pairing-player">${player.name || 'Player'} (${player.handicap})</div>`).join('')}
-                            </div>
-                        </div>
-                        <div class="pairing-vs">VS</div>
-                        <div class="pairing-team">
-                            <h5>${match.team2Name || 'Team B'}</h5>
-                            <div class="pairing-players">
-                                ${match.team2.map(player => `<div class="pairing-player">${player.name || 'Player'} (${player.handicap})</div>`).join('')}
-                            </div>
-                        </div>
-                    </div>
-                `;
-            });
-            return html;
-        }
-
-        function renderHoleGrid() {
-            const grid = document.getElementById('holeGrid');
-            grid.innerHTML = '';
-            
-            for (let i = 0; i < courseData.holes; i++) {
-                const holeDiv = document.createElement('div');
-                holeDiv.className = 'hole-input-group';
-                holeDiv.innerHTML = `
-                    <label style="color: #782F40; font-weight: 600;">Hole ${i + 1}</label>
-                    <div style="margin-bottom: 8px;">
-                        <label style="font-size: 0.8rem; color: #782F40; margin-bottom: 3px; display: block; font-weight: 600;">Par</label>
-                        <input type="number" class="hole-input" value="${courseData.par[i]}" 
-                               min="3" max="5" onchange="updatePar(${i}, this.value)"
-                               style="border-color: #782F40; background: white;">
-                    </div>
-                    <div>
-                        <label style="font-size: 0.8rem; color: #782F40; margin-bottom: 3px; display: block; font-weight: 600;">Net</label>
-                        <input type="number" class="hole-input" value="${courseData.handicaps[i]}" 
-                               min="1" max="${courseData.holes}" onchange="updateHandicap(${i}, this.value)"
-                               style="border-color: #782F40; background: white;">
-                    </div>
-                `;
-                grid.appendChild(holeDiv);
-            }
-        }
-
-        function updatePar(holeIndex, value) {
-            courseData.par[holeIndex] = parseInt(value) || 4;
-            validateCourse();
-        }
-
-        function updateHandicap(holeIndex, value) {
-            courseData.handicaps[holeIndex] = parseInt(value) || 1;
-            validateCourse();
-        }
-
-        function validateCourse() {
-            const validationDiv = document.getElementById('validationMessage');
-            const errors = [];
-            
-            // Check par values
-            const invalidPars = courseData.par.filter(par => par < 3 || par > 5);
-            if (invalidPars.length > 0) {
-                errors.push('Par values must be between 3 and 5');
-            }
-            
-            // Check handicap uniqueness and range
-            const handicapSet = new Set(courseData.handicaps);
-            if (handicapSet.size !== courseData.holes) {
-                errors.push('Each hole must have a unique handicap rating');
-            }
-            
-            const validRange = Array.from({length: courseData.holes}, (_, i) => i + 1);
-            const missingHandicaps = validRange.filter(h => !courseData.handicaps.includes(h));
-            if (missingHandicaps.length > 0) {
-                errors.push(`Missing handicap ratings: ${missingHandicaps.join(', ')}`);
-            }
-            
-            if (errors.length > 0) {
-                validationDiv.innerHTML = `<div style="background: #ffebee; color: #c62828; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #c62828;">${errors.join('<br>')}</div>`;
-            } else {
-                validationDiv.innerHTML = '';
-            }
-        }
-
-        function setupDefaultTeams() {
-            const playersPerTeam = getPlayersPerTeam();
-            
-            let team1Players = [];
-            let team2Players = [];
-            
-            for (let i = 0; i < playersPerTeam; i++) {
-                team1Players.push({name: `Player ${i + 1}`, handicap: 10 + (i * 5)});
-                team2Players.push({name: `Player ${i + 1 + playersPerTeam}`, handicap: 12 + (i * 5)});
-            }
-            
-            teamMatches = [
-                {
-                    id: 1,
-                    team1Name: 'Team Alpha',
-                    team2Name: 'Team Bravo',
-                    team1: team1Players,
-                    team2: team2Players
-                }
-            ];
-            renderTeams();
-        }
-
-        function getPlayersPerTeam() {
-            switch (courseData.matchFormat) {
-                case '2v2-total':
-                case '2v2-low':
-                    return 2;
-                case '1v1':
-                    return 1;
-                default:
-                    return 2;
-            }
-        }
-
-        function addTeamMatch() {
-            const newId = Math.max(...teamMatches.map(t => t.id), 0) + 1;
-            const playersPerTeam = getPlayersPerTeam();
-            
-            let team1Players = [];
-            let team2Players = [];
-            
-            for (let i = 0; i < playersPerTeam; i++) {
-                team1Players.push({name: '', handicap: 0});
-                team2Players.push({name: '', handicap: 0});
-            }
-            
-            teamMatches.push({
-                id: newId,
-                team1Name: '',
-                team2Name: '',
-                team1: team1Players,
-                team2: team2Players
-            });
-            renderTeams();
-        }
-
-        function renderTeams() {
-            const container = document.getElementById('teamsContainer');
-            if (!container) return;
-            
-            container.innerHTML = '';
-            
-            teamMatches.forEach(match => {
-                const matchDiv = document.createElement('div');
-                matchDiv.className = 'teams-setup';
-                matchDiv.innerHTML = `
-                    <div class="team-card">
-                        <div class="team-header">
-                            <input type="text" class="player-input" placeholder="Team Name" 
-                                   value="${match.team1Name || ''}" 
-                                   onchange="updateTeamName(${match.id}, 'team1Name', this.value)"
-                                   style="font-size: 1.2rem; font-weight: 600; color: #782F40; background: transparent; border: 2px dashed #782F40; text-align: center;">
-                            <button class="delete-btn" onclick="deleteTeamMatch(${match.id})">🗑️</button>
-                        </div>
-                        <div class="player-inputs">
-                            ${renderTeamPlayers(match.id, 'team1', match.team1)}
-                        </div>
-                    </div>
-                    
-                    <div class="team-card">
-                        <div class="team-header">
-                            <input type="text" class="player-input" placeholder="Team Name" 
-                                   value="${match.team2Name || ''}" 
-                                   onchange="updateTeamName(${match.id}, 'team2Name', this.value)"
-                                   style="font-size: 1.2rem; font-weight: 600; color: #2e8b57; background: transparent; border: 2px dashed #2e8b57; text-align: center;">
-                            <span class="team-vs">VS</span>
-                        </div>
-                        <div class="player-inputs">
-                            ${renderTeamPlayers(match.id, 'team2', match.team2)}
-                        </div>
-                    </div>
-                `;
-                container.appendChild(matchDiv);
-            });
-
-            // Add pairings section for match play
-            if (courseData.matchFormat !== '1v1') {
-                addPairingsSection();
-            }
-        }
-
-        function renderTeamPlayers(matchId, teamName, players) {
-            return players.map((player, index) => `
-                <div class="player-row">
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <div class="player-photo" style="background: #e9ecef; display: flex; align-items: center; justify-content: center; color: #666;">👤</div>
-                        <input type="text" class="player-input" placeholder="Player ${index + 1} Name" value="${player.name}"
-                               onchange="updatePlayerName(${matchId}, '${teamName}', ${index}, this.value)">
-                    </div>
-                    <input type="number" class="player-input handicap-input" placeholder="HCP" value="${player.handicap || ''}"
-                           min="0" max="54" onchange="updatePlayerHandicap(${matchId}, '${teamName}', ${index}, this.value)">
-                    <div></div>
-                </div>
-            `).join('');
-        }
-
-        function addPairingsSection() {
-            const container = document.getElementById('teamsContainer');
-            const pairingsDiv = document.createElement('div');
-            pairingsDiv.className = 'pairing-section';
-            pairingsDiv.innerHTML = `
-                <h4>🎯 Match Pairings for ${courseData.matchFormat.toUpperCase()}</h4>
-                <p style="color: #666; margin-bottom: 15px;">These pairings will be used for match play scoring</p>
-                <div id="pairingsGrid">
-                    ${generatePairingsDisplay()}
-                </div>
-            `;
-            container.appendChild(pairingsDiv);
-        }
-
-        function generatePairingsDisplay() {
-            let html = '';
-            teamMatches.forEach(match => {
-                html += `
-                    <div class="pairing-grid">
-                        <div class="pairing-team">
-                            <h5>${match.team1Name || 'Team A'}</h5>
-                            <div class="pairing-players">
-                                ${match.team1.map(player => `<div class="pairing-player">${player.name || 'Player'} (${player.handicap})</div>`).join('')}
-                            </div>
-                        </div>
-                        <div class="pairing-vs">VS</div>
-                        <div class="pairing-team">
-                            <h5>${match.team2Name || 'Team B'}</h5>
-                            <div class="pairing-players">
-                                ${match.team2.map(player => `<div class="pairing-player">${player.name || 'Player'} (${player.handicap})</div>`).join('')}
-                            </div>
-                        </div>
-                    </div>
-                `;
-            });
-            return html;
-        }
-
-        function updatePlayerName(matchId, teamName, playerIndex, name) {
-            const match = teamMatches.find(m => m.id === matchId);
-            match[teamName][playerIndex].name = name;
-        }
-
-        function updateTeamName(matchId, teamKey, name) {
-            const match = teamMatches.find(m => m.id === matchId);
-            match[teamKey] = name;
-        }
-
-        function updatePlayerHandicap(matchId, teamName, playerIndex, handicap) {
-            const match = teamMatches.find(m => m.id === matchId);
-            match[teamName][playerIndex].handicap = parseInt(handicap) || 0;
-        }
-
-        function deleteTeamMatch(matchId) {
-            if (confirm('Delete this team match?')) {
-                teamMatches = teamMatches.filter(m => m.id !== matchId);
-                renderTeams();
                 
-                // Clean up scores
-                Object.keys(scores).forEach(key => {
-                    if (key.startsWith(`match${matchId}-`)) {
-                        delete scores[key];
-                    }
+                holes.push({
+                    number: i,
+                    par: parseInt(par),
+                    handicap: parseInt(handicap)
                 });
             }
-        }
 
-        function calculateStrokesForHole(playerHandicap, holeHandicap) {
-            const baseStrokes = Math.floor(playerHandicap / courseData.holes);
-            const extraStrokes = playerHandicap % courseData.holes;
-            
-            const getsExtraStroke = holeHandicap <= extraStrokes;
-            return baseStrokes + (getsExtraStroke ? 1 : 0);
-        }
-
-        function generateScorecard() {
-            const container = document.getElementById('scorecardContent');
-            if (!container) return;
-            
-            if (teamMatches.length === 0) {
-                container.innerHTML = '<p>Please set up teams first in the Team Setup tab.</p>';
-                return;
-            }
-            
-            let html = `
-                <div style="background: #e3f2fd; padding: 20px; border-radius: 10px; margin-bottom: 20px; border-left: 5px solid #2196f3;">
-                    <h4 style="color: #1976d2; margin-bottom: 10px;">🏌️ ${courseData.matchFormat.toUpperCase()} Scorecard</h4>
-                    <p style="color: #666;">Enter individual gross scores. Net scores and match play results will be calculated automatically.</p>
-                </div>
-            `;
-            
-            teamMatches.forEach((match, matchIndex) => {
-                html += `
-                    <h3 style="color: #782F40; margin: 30px 0 20px 0;">${match.team1Name || 'Team A'} vs ${match.team2Name || 'Team B'}</h3>
-                    
-                    <div class="scorecard-container">
-                        <table class="scorecard">
-                            <thead>
-                                <tr>
-                                    <th style="min-width: 150px;">Player</th>
-                                    ${Array.from({length: courseData.holes}, (_, i) => `<th>${i + 1}</th>`).join('')}
-                                    <th>Total</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <!-- Course Info -->
-                                <tr>
-                                    <td class="hole-info-cell">Par</td>
-                                    ${courseData.par.map(par => `<td class="par-cell">${par}</td>`).join('')}
-                                    <td class="par-cell">${courseData.par.reduce((sum, par) => sum + par, 0)}</td>
-                                </tr>
-                                <tr>
-                                    <td class="hole-info-cell">Handicap</td>
-                                    ${courseData.handicaps.map(hcp => `<td class="handicap-cell">${hcp}</td>`).join('')}
-                                    <td class="handicap-cell">-</td>
-                                </tr>
-                                
-                                <!-- Team 1 -->
-                                <tr>
-                                    <td class="team-label-cell">${match.team1Name || 'TEAM A'}</td>
-                                    ${Array.from({length: courseData.holes + 1}, () => '<td class="team-label-cell"></td>').join('')}
-                                </tr>
-                                
-                                ${match.team1.map((player, playerIndex) => {
-                                    const playerId = `match${match.id}-team1-${playerIndex}`;
-                                    
-                                    // Gross score row
-                                    let grossRow = `<tr>
-                                        <td class="player-name-cell">${player.name || 'Player'} (${player.handicap})</td>`;
-                                    
-                                    let grossTotal = 0;
-                                    for (let hole = 1; hole <= courseData.holes; hole++) {
-                                        const scoreKey = `${playerId}-hole${hole}`;
-                                        const currentScore = scores[scoreKey] || '';
-                                        grossRow += `<td class="gross-score-cell">
-                                            <input type="number" class="score-input" 
-                                                   value="${currentScore}" 
-                                                   onchange="updateScore('${scoreKey}', this.value)"
-                                                   min="1" max="15" placeholder="">
-                                        </td>`;
-                                        if (currentScore) grossTotal += parseInt(currentScore);
-                                    }
-                                    grossRow += `<td class="total-cell">${grossTotal || ''}</td></tr>`;
-                                    
-                                    // Net score row
-                                    let netRow = `<tr>
-                                        <td class="player-name-cell">${player.name || 'Player'} (Net)</td>`;
-                                    
-                                    let netTotal = 0;
-                                    for (let hole = 1; hole <= courseData.holes; hole++) {
-                                        const scoreKey = `${playerId}-hole${hole}`;
-                                        const grossScore = scores[scoreKey];
-                                        const holeHandicap = courseData.handicaps[hole - 1];
-                                        const strokes = calculateStrokesForHole(player.handicap, holeHandicap);
-                                        
-                                        let netScore = '';
-                                        let cellClass = 'net-score-cell';
-                                        
-                                        if (grossScore && !isNaN(grossScore)) {
-                                            netScore = parseInt(grossScore) - strokes;
-                                            netTotal += netScore;
-                                        }
-                                        
-                                        if (strokes > 0) {
-                                            cellClass += ' stroke-hole';
-                                        }
-                                        
-                                        netRow += `<td class="${cellClass}" title="Gets ${strokes} stroke${strokes !== 1 ? 's' : ''}">${netScore}</td>`;
-                                    }
-                                    netRow += `<td class="total-cell">${netTotal || ''}</td></tr>`;
-                                    
-                                    return grossRow + netRow;
-                                }).join('')}
-                                
-                                <!-- Team 2 -->
-                                <tr>
-                                    <td class="team-label-cell">${match.team2Name || 'TEAM B'}</td>
-                                    ${Array.from({length: courseData.holes + 1}, () => '<td class="team-label-cell"></td>').join('')}
-                                </tr>
-                                
-                                ${match.team2.map((player, playerIndex) => {
-                                    const playerId = `match${match.id}-team2-${playerIndex}`;
-                                    
-                                    // Gross score row
-                                    let grossRow = `<tr>
-                                        <td class="player-name-cell">${player.name || 'Player'} (${player.handicap})</td>`;
-                                    
-                                    let grossTotal = 0;
-                                    for (let hole = 1; hole <= courseData.holes; hole++) {
-                                        const scoreKey = `${playerId}-hole${hole}`;
-                                        const currentScore = scores[scoreKey] || '';
-                                        grossRow += `<td class="gross-score-cell">
-                                            <input type="number" class="score-input" value="${currentScore}" 
-                                                   onchange="updateScore('${scoreKey}', this.value)"
-                                                   min="1" max="15" placeholder="">
-                                        </td>`;
-                                        if (currentScore) grossTotal += parseInt(currentScore);
-                                    }
-                                    grossRow += `<td class="total-cell">${grossTotal || ''}</td></tr>`;
-                                    
-                                    // Net score row
-                                    let netRow = `<tr>
-                                        <td class="player-name-cell">${player.name || 'Player'} (Net)</td>`;
-                                    
-                                    let netTotal = 0;
-                                    for (let hole = 1; hole <= courseData.holes; hole++) {
-                                        const scoreKey = `${playerId}-hole${hole}`;
-                                        const grossScore = scores[scoreKey];
-                                        const holeHandicap = courseData.handicaps[hole - 1];
-                                        const strokes = calculateStrokesForHole(player.handicap, holeHandicap);
-                                        
-                                        let netScore = '';
-                                        let cellClass = 'net-score-cell';
-                                        
-                                        if (grossScore && !isNaN(grossScore)) {
-                                            netScore = parseInt(grossScore) - strokes;
-                                            netTotal += netScore;
-                                        }
-                                        
-                                        if (strokes > 0) {
-                                            cellClass += ' stroke-hole';
-                                        }
-                                        
-                                        netRow += `<td class="${cellClass}" title="Gets ${strokes} stroke${strokes !== 1 ? 's' : ''}">${netScore}</td>`;
-                                    }
-                                    netRow += `<td class="total-cell">${netTotal || ''}</td></tr>`;
-                                    
-                                    return grossRow + netRow;
-                                }).join('')}
-                                
-                            </tbody>
-                        </table>
-                    </div>
-                `;
-            });
-            
-            container.innerHTML = html;
-        }
-
-        function updateScore(scoreKey, value) {
-            if (value === '' || value === null) {
-                delete scores[scoreKey];
-            } else {
-                scores[scoreKey] = parseInt(value);
-            }
-            generateScorecard(); // Refresh to update net scores and totals
-            
-            // Auto-save current scores
-            localStorage.setItem('currentScores', JSON.stringify(scores));
-        }
-
-        function generateMatchPlayView() {
-            const container = document.getElementById('matchPlayContent');
-            if (!container) return;
-            
-            if (teamMatches.length === 0) {
-                container.innerHTML = '<p>Please set up teams first in the Team Setup tab.</p>';
-                return;
-            }
-
-            let html = `
-                <div style="background: #e8f5e8; padding: 20px; border-radius: 10px; margin-bottom: 20px; border-left: 5px solid #4CAF50;">
-                    <h4 style="color: #2e7d32; margin-bottom: 10px;">🎯 Match Play Results - ${courseData.matchFormat.toUpperCase()}</h4>
-                    <p style="color: #666;">2 points for winning a hole, 1 point for tie. 2-point bonus for winning each 9-hole segment.</p>
-                </div>
-            `;
-
-            teamMatches.forEach(match => {
-                const matchResults = calculateMatchPlayResults(match);
-                
-                html += `
-                    <div class="match-play-scorecard">
-                        <div class="match-play-header">
-                            <h3>${match.team1Name || 'Team A'} vs ${match.team2Name || 'Team B'}</h3>
-                            <div>${courseData.matchFormat.toUpperCase()} Format</div>
-                        </div>
-                        
-                        <table class="match-play-table">
-                            <thead>
-                                <tr>
-                                    <th>Hole</th>
-                                    <th>Par</th>
-                                    <th>${match.team1Name || 'Team A'}</th>
-                                    <th>${match.team2Name || 'Team B'}</th>
-                                    <th>Winner</th>
-                                    <th>Points</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${generateMatchPlayTable(match, matchResults)}
-                            </tbody>
-                        </table>
-                        
-                        ${generateMatchSummary(match, matchResults)}
-                    </div>
-                `;
-            });
-
-            container.innerHTML = html;
-        }
-
-        function calculateMatchPlayResults(match) {
-            const results = {
-                holeResults: [],
-                team1Points: 0,
-                team2Points: 0,
-                front9Team1: 0,
-                front9Team2: 0,
-                back9Team1: 0,
-                back9Team2: 0
+            const course = {
+                id: Date.now(),
+                name: courseName,
+                year: parseInt(tournamentYear),
+                holes: holes
             };
 
-            for (let hole = 1; hole <= courseData.holes; hole++) {
-                const team1Score = calculateTeamScoreForHole(match, 'team1', hole);
-                const team2Score = calculateTeamScoreForHole(match, 'team2', hole);
-                
-                let winner = '';
-                let points = { team1: 0, team2: 0 };
-                
-                if (team1Score !== null && team2Score !== null) {
-                    if (team1Score < team2Score) {
-                        winner = match.team1Name || 'Team A';
-                        points.team1 = 2;
-                    } else if (team2Score < team1Score) {
-                        winner = match.team2Name || 'Team B';
-                        points.team2 = 2;
-                    } else {
-                        winner = 'Tie';
-                        points.team1 = 1;
-                        points.team2 = 1;
-                    }
-                }
-
-                results.holeResults.push({
-                    hole: hole,
-                    team1Score: team1Score,
-                    team2Score: team2Score,
-                    winner: winner,
-                    points: points
-                });
-
-                results.team1Points += points.team1;
-                results.team2Points += points.team2;
-
-                // Track 9-hole segments
-                if (hole <= 9) {
-                    results.front9Team1 += points.team1;
-                    results.front9Team2 += points.team2;
-                } else {
-                    results.back9Team1 += points.team1;
-                    results.back9Team2 += points.team2;
-                }
-            }
-
-            // Add 9-hole bonuses
-            if (courseData.holes >= 9) {
-                if (results.front9Team1 > results.front9Team2) {
-                    results.team1Points += 2;
-                } else if (results.front9Team2 > results.front9Team1) {
-                    results.team2Points += 2;
-                } else if (results.front9Team1 === results.front9Team2 && results.front9Team1 > 0) {
-                    results.team1Points += 1;
-                    results.team2Points += 1;
-                }
-
-                if (courseData.holes === 18) {
-                    if (results.back9Team1 > results.back9Team2) {
-                        results.team1Points += 2;
-                    } else if (results.back9Team2 > results.back9Team1) {
-                        results.team2Points += 2;
-                    } else if (results.back9Team1 === results.back9Team2 && results.back9Team1 > 0) {
-                        results.team1Points += 1;
-                        results.team2Points += 1;
-                    }
-                }
-            }
-
-            return results;
+            courses.push(course);
+            localStorage.setItem('courses', JSON.stringify(courses));
+            displaySavedCourses();
+            alert('Course saved successfully!');
         }
 
-        function calculateTeamScoreForHole(match, teamName, hole) {
-            const team = match[teamName];
-            let teamScore = null;
-
-            if (courseData.matchFormat === '2v2-total') {
-                // Add both players' net scores
-                let total = 0;
-                let hasScores = 0;
-                
-                team.forEach((player, index) => {
-                    const scoreKey = `match${match.id}-${teamName}-${index}-hole${hole}`;
-                    const grossScore = scores[scoreKey];
-                    
-                    if (grossScore && !isNaN(grossScore)) {
-                        const holeHandicap = courseData.handicaps[hole - 1];
-                        const strokes = calculateStrokesForHole(player.handicap, holeHandicap);
-                        const netScore = parseInt(grossScore) - strokes;
-                        total += netScore;
-                        hasScores++;
-                    }
-                });
-                
-                if (hasScores === team.length) {
-                    teamScore = total;
-                }
-                
-            } else if (courseData.matchFormat === '2v2-low') {
-                // Take best net score
-                let bestScore = null;
-                
-                team.forEach((player, index) => {
-                    const scoreKey = `match${match.id}-${teamName}-${index}-hole${hole}`;
-                    const grossScore = scores[scoreKey];
-                    
-                    if (grossScore && !isNaN(grossScore)) {
-                        const holeHandicap = courseData.handicaps[hole - 1];
-                        const strokes = calculateStrokesForHole(player.handicap, holeHandicap);
-                        const netScore = parseInt(grossScore) - strokes;
-                        
-                        if (bestScore === null || netScore < bestScore) {
-                            bestScore = netScore;
-                        }
-                    }
-                });
-                
-                teamScore = bestScore;
-                
-            } else if (courseData.matchFormat === '1v1') {
-                // Individual net score
-                const player = team[0];
-                const scoreKey = `match${match.id}-${teamName}-0-hole${hole}`;
-                const grossScore = scores[scoreKey];
-                
-                if (grossScore && !isNaN(grossScore)) {
-                    const holeHandicap = courseData.handicaps[hole - 1];
-                    const strokes = calculateStrokesForHole(player.handicap, holeHandicap);
-                    teamScore = parseInt(grossScore) - strokes;
-                }
+        function deleteCourse() {
+            if (confirm('Are you sure you want to delete the current course setup?')) {
+                document.getElementById('course-name').value = '';
+                document.getElementById('tournament-year').value = '';
+                document.getElementById('holes-container').innerHTML = '';
             }
-
-            return teamScore;
         }
 
-        function generateMatchPlayTable(match, results) {
-            let html = '';
+        function displaySavedCourses() {
+            const container = document.getElementById('saved-courses');
+            container.innerHTML = '<h3>Saved Courses</h3>';
             
-            results.holeResults.forEach((result, index) => {
-                const hole = result.hole;
-                const par = courseData.par[hole - 1];
-                
-                let rowClass = '';
-                if (result.winner === (match.team1Name || 'Team A')) {
-                    rowClass = 'hole-winner';
-                } else if (result.winner === (match.team2Name || 'Team B')) {
-                    rowClass = 'hole-winner';
-                } else if (result.winner === 'Tie') {
-                    rowClass = 'hole-tie';
-                }
-                
-                html += `
-                    <tr class="${rowClass}">
-                        <td><strong>${hole}</strong></td>
-                        <td>${par}</td>
-                        <td>${result.team1Score !== null ? result.team1Score : '-'}</td>
-                        <td>${result.team2Score !== null ? result.team2Score : '-'}</td>
-                        <td><strong>${result.winner}</strong></td>
-                        <td>${result.points.team1}-${result.points.team2}</td>
-                    </tr>
+            courses.forEach(course => {
+                const courseDiv = document.createElement('div');
+                courseDiv.className = 'player-card';
+                courseDiv.innerHTML = `
+                    <h4>${course.name} (${course.year})</h4>
+                    <button class="btn" onclick="loadCourse(${course.id})">Load</button>
+                    <button class="btn btn-danger" onclick="removeCourse(${course.id})">Delete</button>
                 `;
+                container.appendChild(courseDiv);
+            });
+        }
 
-                // Add 9-hole bonus rows
-                if (hole === 9 && courseData.holes >= 9) {
-                    const front9Winner = results.front9Team1 > results.front9Team2 ? 
-                        (match.team1Name || 'Team A') : 
-                        results.front9Team2 > results.front9Team1 ? 
-                        (match.team2Name || 'Team B') : 'Tie';
-                    
-                    html += `
-                        <tr class="nine-hole-bonus">
-                            <td colspan="4"><strong>Front 9 Bonus</strong></td>
-                            <td><strong>${front9Winner}</strong></td>
-                            <td><strong>+2 pts</strong></td>
-                        </tr>
-                    `;
-                }
+        function loadCourse(courseId) {
+            const course = courses.find(c => c.id === courseId);
+            if (course) {
+                document.getElementById('course-name').value = course.name;
+                document.getElementById('tournament-year').value = course.year;
+                generateHoles();
+                
+                course.holes.forEach(hole => {
+                    document.querySelector(`.hole-par[data-hole="${hole.number}"]`).value = hole.par;
+                    document.querySelector(`.hole-handicap[data-hole="${hole.number}"]`).value = hole.handicap;
+                });
+            }
+        }
 
-                if (hole === 18 && courseData.holes === 18) {
-                    const back9Winner = results.back9Team1 > results.back9Team2 ? 
-                        (match.team1Name || 'Team A') : 
-                        results.back9Team2 > results.back9Team1 ? 
-                        (match.team2Name || 'Team B') : 'Tie';
+        function removeCourse(courseId) {
+            if (confirm('Are you sure you want to delete this course?')) {
+                courses = courses.filter(c => c.id !== courseId);
+                localStorage.setItem('courses', JSON.stringify(courses));
+                displaySavedCourses();
+            }
+        }
+
+        // Team Setup Functions
+        function saveTeam() {
+            const teamName = document.getElementById('team-name').value;
+            if (!teamName) {
+                alert('Please enter team name');
+                return;
+            }
+
+            const players = [];
+            const playerCards = document.querySelectorAll('.player-card');
+            
+            playerCards.forEach((card, index) => {
+                const name = card.querySelector('.player-name').value;
+                const handicap = card.querySelector('.player-handicap').value;
+                
+                if (name && handicap) {
+                    const player = {
+                        name: name,
+                        handicap: parseInt(handicap)
+                    };
                     
-                    html += `
-                        <tr class="nine-hole-bonus">
-                            <td colspan="4"><strong>Back 9 Bonus</strong></td>
-                            <td><strong>${back9Winner}</strong></td>
-                            <td><strong>+2 pts</strong></td>
-                        </tr>
-                    `;
+                    // Save photo if uploaded
+                    if (window.tempPhotos && window.tempPhotos[index]) {
+                        savePlayerPhoto(name, window.tempPhotos[index]);
+                        player.hasPhoto = true;
+                    }
+                    
+                    players.push(player);
                 }
             });
+
+            if (players.length < 4) {
+                alert('Please enter all 4 players');
+                return;
+            }
+
+            const team = {
+                id: Date.now(),
+                name: teamName,
+                players: players
+            };
+
+            teams.push(team);
+            localStorage.setItem('teams', JSON.stringify(teams));
+            displaySavedTeams();
+            
+            // Clear temp photos
+            window.tempPhotos = {};
+            
+            alert('Team saved successfully!');
+        }
+
+        function deleteTeam() {
+            if (confirm('Are you sure you want to delete the current team setup?')) {
+                document.getElementById('team-name').value = '';
+                document.querySelectorAll('.player-name').forEach(input => input.value = '');
+                document.querySelectorAll('.player-handicap').forEach(input => input.value = '');
+            }
+        }
+
+        function displaySavedTeams() {
+            const container = document.getElementById('saved-teams');
+            container.innerHTML = '<h3>Saved Teams</h3>';
+            
+            teams.forEach(team => {
+                const teamDiv = document.createElement('div');
+                teamDiv.className = 'player-card';
+                
+                let playersHtml = '<ul>';
+                team.players.forEach(player => {
+                    const photo = getPlayerPhoto(player.name);
+                    const photoHtml = photo ? `<img src="${photo}" class="player-photo-display" alt="${player.name}">` : '';
+                    playersHtml += `<li style="display: flex; align-items: center; margin: 0.5rem 0;">${photoHtml}${player.name} (${player.handicap})</li>`;
+                });
+                playersHtml += '</ul>';
+                
+                teamDiv.innerHTML = `
+                    <h4>${team.name}</h4>
+                    ${playersHtml}
+                    <button class="btn" onclick="loadTeam(${team.id})">Load</button>
+                    <button class="btn btn-danger" onclick="removeTeam(${team.id})">Delete</button>
+                `;
+                container.appendChild(teamDiv);
+            });
+        }
+
+        function loadTeam(teamId) {
+            const team = teams.find(t => t.id === teamId);
+            if (team) {
+                document.getElementById('team-name').value = team.name;
+                const playerCards = document.querySelectorAll('.player-card');
+                
+                team.players.forEach((player, index) => {
+                    if (playerCards[index]) {
+                        playerCards[index].querySelector('.player-name').value = player.name;
+                        playerCards[index].querySelector('.player-handicap').value = player.handicap;
+                    }
+                });
+            }
+        }
+
+        function removeTeam(teamId) {
+            if (confirm('Are you sure you want to delete this team?')) {
+                teams = teams.filter(t => t.id !== teamId);
+                localStorage.setItem('teams', JSON.stringify(teams));
+                displaySavedTeams();
+            }
+        }
+
+        // Scorecard Functions
+        function setupMatchType() {
+            const matchType = document.getElementById('match-type').value;
+            // Setup will be completed when scorer is verified
+        }
+
+        function setupScorecardEntry() {
+            const roundName = document.getElementById('round-name').value;
+            const matchType = document.getElementById('match-type').value;
+            
+            if (!roundName || !matchType) {
+                alert('Please enter round name and select match type');
+                return;
+            }
+
+            if (courses.length === 0) {
+                alert('Please set up a course first');
+                return;
+            }
+
+            if (teams.length < 2) {
+                alert('Please set up at least 2 teams first');
+                return;
+            }
+
+            const container = document.getElementById('scorecard-container');
+            container.classList.remove('hidden');
+            
+            // Use the most recent course
+            const currentCourse = courses[courses.length - 1];
+            
+            if (matchType === '1v1') {
+                setupIndividualMatches(container, currentCourse, roundName);
+            } else {
+                setupTeamMatches(container, currentCourse, roundName, matchType);
+            }
+        }
+
+        function setupTeamMatches(container, course, roundName, matchType) {
+            container.innerHTML = `
+                <h3>${roundName} - ${matchType}</h3>
+                <div class="form-group">
+                    <label>Select Teams:</label>
+                    <select id="team1-select">
+                        ${teams.map(team => `<option value="${team.id}">${team.name}</option>`).join('')}
+                    </select>
+                    <select id="team2-select">
+                        ${teams.map(team => `<option value="${team.id}">${team.name}</option>`).join('')}
+                    </select>
+                </div>
+                <button class="btn" onclick="generateTeamScorecard('${roundName}', '${matchType}')">Generate Scorecard</button>
+                <div id="team-scorecard-area"></div>
+            `;
+        }
+
+        function setupIndividualMatches(container, course, roundName) {
+            container.innerHTML = `
+                <h3>${roundName} - Individual Matches</h3>
+                <p>Setting up 8 individual matches...</p>
+                <button class="btn" onclick="generateIndividualMatches('${roundName}')">Generate Individual Scorecards</button>
+                <div id="individual-scorecard-area"></div>
+            `;
+        }
+
+        function generateTeamScorecard(roundName, matchType) {
+            const team1Id = document.getElementById('team1-select').value;
+            const team2Id = document.getElementById('team2-select').value;
+            
+            if (team1Id === team2Id) {
+                alert('Please select different teams');
+                return;
+            }
+
+            const team1 = teams.find(t => t.id == team1Id);
+            const team2 = teams.find(t => t.id == team2Id);
+            const course = courses[courses.length - 1];
+
+            const scorecardArea = document.getElementById('team-scorecard-area');
+            scorecardArea.innerHTML = createTeamScorecardHTML(team1, team2, course, roundName, matchType);
+        }
+
+        function generateIndividualMatches(roundName) {
+            const scorecardArea = document.getElementById('individual-scorecard-area');
+            const course = courses[courses.length - 1];
+            
+            // For individual matches, we'll create 8 match pairings
+            const allPlayers = [];
+            teams.forEach(team => {
+                team.players.forEach(player => {
+                    allPlayers.push({...player, teamName: team.name});
+                });
+            });
+
+            let html = '<h4>Individual Match Scorecards</h4>';
+            for (let i = 0; i < 8; i++) {
+                html += `
+                    <div class="match-card">
+                        <h5>Match ${i + 1}</h5>
+                        <div class="form-group">
+                            <label>Player 1:</label>
+                            <select id="match${i}-player1">
+                                ${allPlayers.map(p => `<option value="${p.name}">${p.name} (${p.teamName})</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Player 2:</label>
+                            <select id="match${i}-player2">
+                                ${allPlayers.map(p => `<option value="${p.name}">${p.name} (${p.teamName})</option>`).join('')}
+                            </select>
+                        </div>
+                        <button class="btn" onclick="createIndividualScorecard(${i}, '${roundName}')">Create Scorecard</button>
+                        <div id="individual-match-${i}-scorecard"></div>
+                    </div>
+                `;
+            }
+            
+            scorecardArea.innerHTML = html;
+        }
+
+        function createTeamScorecardHTML(team1, team2, course, roundName, matchType) {
+            let html = `
+                <div class="match-card">
+                    <h4>${team1.name} vs ${team2.name}</h4>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Hole</th>
+                                <th>Par</th>
+                                <th>Handicap</th>
+            `;
+            
+            // Add player columns
+            team1.players.forEach(player => {
+                html += `<th>${player.name} (${player.handicap})</th>`;
+            });
+            team2.players.forEach(player => {
+                html += `<th>${player.name} (${player.handicap})</th>`;
+            });
+            
+            html += `
+                                <th>Team 1 Net</th>
+                                <th>Team 2 Net</th>
+                                <th>Points</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            // Add hole rows
+            course.holes.forEach(hole => {
+                html += `
+                    <tr>
+                        <td>${hole.number}</td>
+                        <td>${hole.par}</td>
+                        <td>${hole.handicap}</td>
+                `;
+                
+                // Add input fields for each player
+                team1.players.forEach(player => {
+                    html += `<td><input type="number" class="scorecard-input" data-hole="${hole.number}" data-player="${player.name}" data-team="1" onchange="calculateHoleScore(${hole.number}, '${matchType}')" min="1" max="10"></td>`;
+                });
+                team2.players.forEach(player => {
+                    html += `<td><input type="number" class="scorecard-input" data-hole="${hole.number}" data-player="${player.name}" data-team="2" onchange="calculateHoleScore(${hole.number}, '${matchType}')" min="1" max="10"></td>`;
+                });
+                
+                html += `
+                        <td id="team1-net-${hole.number}">-</td>
+                        <td id="team2-net-${hole.number}">-</td>
+                        <td id="points-${hole.number}">-</td>
+                    </tr>
+                `;
+            });
+
+            html += `
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <th colspan="${3 + team1.players.length + team2.players.length}">Total Points</th>
+                                <th id="team1-total">0</th>
+                                <th id="team2-total">0</th>
+                                <th id="total-points">0</th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                    <button class="btn" onclick="saveRound('${roundName}', '${matchType}')">Save Round</button>
+                    <button class="btn" onclick="completeRound('${roundName}', '${matchType}')">Complete Round</button>
+                </div>
+            `;
 
             return html;
         }
 
-        function generateMatchSummary(match, results) {
-            const team1Name = match.team1Name || 'Team A';
-            const team2Name = match.team2Name || 'Team B';
-            const matchWinner = results.team1Points > results.team2Points ? team1Name :
-                               results.team2Points > results.team1Points ? team2Name : 'Tie';
+        function calculateHoleScore(holeNumber, matchType) {
+            const course = courses[courses.length - 1];
+            const hole = course.holes.find(h => h.number === holeNumber);
+            
+            // Get all scores for this hole
+            const team1Scores = [];
+            const team2Scores = [];
+            
+            document.querySelectorAll(`[data-hole="${holeNumber}"][data-team="1"]`).forEach(input => {
+                if (input.value) {
+                    const playerName = input.dataset.player;
+                    const player = teams.flatMap(t => t.players).find(p => p.name === playerName);
+                    const strokes = getStrokesForHole(player.handicap, hole.handicap);
+                    const netScore = Math.max(1, parseInt(input.value) - strokes);
+                    team1Scores.push(netScore);
+                }
+            });
+            
+            document.querySelectorAll(`[data-hole="${holeNumber}"][data-team="2"]`).forEach(input => {
+                if (input.value) {
+                    const playerName = input.dataset.player;
+                    const player = teams.flatMap(t => t.players).find(p => p.name === playerName);
+                    const strokes = getStrokesForHole(player.handicap, hole.handicap);
+                    const netScore = Math.max(1, parseInt(input.value) - strokes);
+                    team2Scores.push(netScore);
+                }
+            });
 
-            return `
-                <div class="match-summary">
-                    <h4>Match Summary</h4>
-                    <div class="summary-grid">
-                        <div class="summary-card">
-                            <div class="summary-value">${results.team1Points}</div>
-                            <div class="summary-label">${team1Name} Points</div>
+            // Calculate team scores based on match type
+            let team1Net = 0;
+            let team2Net = 0;
+            
+            if (matchType === '2v2-best') {
+                team1Net = team1Scores.length > 0 ? Math.min(...team1Scores) : 0;
+                team2Net = team2Scores.length > 0 ? Math.min(...team2Scores) : 0;
+            } else if (matchType === '2v2-combined') {
+                team1Net = team1Scores.reduce((a, b) => a + b, 0);
+                team2Net = team2Scores.reduce((a, b) => a + b, 0);
+            }
+
+            // Apply max score of 10
+            team1Net = Math.min(team1Net, 10);
+            team2Net = Math.min(team2Net, 10);
+
+            // Update display
+            document.getElementById(`team1-net-${holeNumber}`).textContent = team1Net || '-';
+            document.getElementById(`team2-net-${holeNumber}`).textContent = team2Net || '-';
+
+            // Calculate points (1 point for win, 0.5 for tie)
+            let points = '-';
+            if (team1Net && team2Net) {
+                if (team1Net < team2Net) {
+                    points = '1-0';
+                } else if (team2Net < team1Net) {
+                    points = '0-1';
+                } else {
+                    points = '0.5-0.5';
+                }
+            }
+            
+            document.getElementById(`points-${holeNumber}`).textContent = points;
+            
+            // Update totals
+            updateTotals();
+        }
+
+        function getStrokesForHole(playerHandicap, holeHandicap) {
+            // Correct handicap calculation
+            const strokesPerHole = Math.floor(playerHandicap / 18);
+            const extraStrokes = playerHandicap % 18;
+            
+            // Player gets extra stroke if hole handicap is <= remainder
+            return strokesPerHole + (holeHandicap <= extraStrokes ? 1 : 0);
+        }
+
+        function updateTotals() {
+            let team1Total = 0;
+            let team2Total = 0;
+            
+            for (let i = 1; i <= 18; i++) {
+                const pointsText = document.getElementById(`points-${i}`)?.textContent;
+                if (pointsText && pointsText !== '-') {
+                    const [p1, p2] = pointsText.split('-').map(p => parseFloat(p));
+                    team1Total += p1;
+                    team2Total += p2;
+                }
+            }
+            
+            document.getElementById('team1-total').textContent = team1Total;
+            document.getElementById('team2-total').textContent = team2Total;
+            document.getElementById('total-points').textContent = team1Total + team2Total;
+        }
+
+        function saveRound(roundName, matchType) {
+            // Save current round data
+            const roundData = collectRoundData(roundName, matchType);
+            
+            // Find existing round or create new one
+            const existingIndex = rounds.findIndex(r => r.name === roundName);
+            if (existingIndex >= 0) {
+                rounds[existingIndex] = roundData;
+            } else {
+                rounds.push(roundData);
+            }
+            
+            localStorage.setItem('rounds', JSON.stringify(rounds));
+            alert('Round saved successfully!');
+        }
+
+        function completeRound(roundName, matchType) {
+            saveRound(roundName, matchType);
+            
+            // Mark round as complete
+            const roundIndex = rounds.findIndex(r => r.name === roundName);
+            if (roundIndex >= 0) {
+                rounds[roundIndex].completed = true;
+                localStorage.setItem('rounds', JSON.stringify(rounds));
+            }
+            
+            // Update live scoring
+            updateLiveScoring();
+            updateOverallScoring();
+            updatePlayerStats();
+            
+            alert('Round completed and saved!');
+        }
+
+        function collectRoundData(roundName, matchType) {
+            const team1Total = parseFloat(document.getElementById('team1-total').textContent) || 0;
+            const team2Total = parseFloat(document.getElementById('team2-total').textContent) || 0;
+            
+            // Collect all scores and stats
+            const playerScores = {};
+            
+            document.querySelectorAll('.scorecard-input[data-player]').forEach(input => {
+                if (input.value) {
+                    const playerName = input.dataset.player;
+                    const hole = parseInt(input.dataset.hole);
+                    const score = parseInt(input.value);
+                    
+                    if (!playerScores[playerName]) {
+                        playerScores[playerName] = [];
+                    }
+                    playerScores[playerName].push({hole, score});
+                }
+            });
+
+            return {
+                name: roundName,
+                matchType: matchType,
+                team1Points: team1Total,
+                team2Points: team2Total,
+                playerScores: playerScores,
+                completed: false,
+                timestamp: new Date().toISOString()
+            };
+        }
+
+        function updateLiveScoring() {
+            const container = document.getElementById('live-matches-container');
+            container.innerHTML = '<h3>Current Matches</h3>';
+            
+            rounds.forEach(round => {
+                const roundDiv = document.createElement('div');
+                roundDiv.className = round.completed ? 'round-complete' : 'match-card';
+                roundDiv.innerHTML = `
+                    <h4>${round.name} ${round.completed ? '(COMPLETE)' : '(IN PROGRESS)'}</h4>
+                    <p>Team 1: ${round.team1Points} points</p>
+                    <p>Team 2: ${round.team2Points} points</p>
+                    <p>Match Type: ${round.matchType}</p>
+                `;
+                container.appendChild(roundDiv);
+            });
+        }
+
+        function updateOverallScoring() {
+            const tbody = document.getElementById('overall-scores-body');
+            tbody.innerHTML = '';
+            
+            let team1GrandTotal = 0;
+            let team2GrandTotal = 0;
+            
+            rounds.forEach(round => {
+                if (round.completed) {
+                    const row = document.createElement('tr');
+                    const maxPoints = round.matchType === '1v1' ? 8 : 18; // Adjust based on match type
+                    
+                    row.innerHTML = `
+                        <td>${round.name}</td>
+                        <td>${round.team1Points}</td>
+                        <td>${round.team2Points}</td>
+                        <td>${maxPoints}</td>
+                    `;
+                    tbody.appendChild(row);
+                    
+                    team1GrandTotal += round.team1Points;
+                    team2GrandTotal += round.team2Points;
+                }
+            });
+            
+            // Add totals row
+            const totalRow = document.createElement('tr');
+            totalRow.style.fontWeight = 'bold';
+            totalRow.style.backgroundColor = '#f8f9fa';
+            totalRow.innerHTML = `
+                <td>TOTAL</td>
+                <td>${team1GrandTotal}</td>
+                <td>${team2GrandTotal}</td>
+                <td>440</td>
+            `;
+            tbody.appendChild(totalRow);
+            
+            // Update team totals display
+            document.getElementById('team-totals').innerHTML = `
+                <h4>Team 1: ${team1GrandTotal} points</h4>
+                <h4>Team 2: ${team2GrandTotal} points</h4>
+                ${team1GrandTotal >= 221 ? '<p style="color: var(--garnet); font-weight: bold;">🏆 TEAM 1 WINS!</p>' : ''}
+                ${team2GrandTotal >= 221 ? '<p style="color: var(--garnet); font-weight: bold;">🏆 TEAM 2 WINS!</p>' : ''}
+            `;
+        }
+
+        function updatePlayerStats() {
+            const container = document.getElementById('player-stats-container');
+            container.innerHTML = '<h3>Player Statistics</h3>';
+            
+            const allPlayers = {};
+            
+            // Initialize player stats
+            teams.forEach(team => {
+                team.players.forEach(player => {
+                    allPlayers[player.name] = {
+                        name: player.name,
+                        handicap: player.handicap,
+                        teamName: team.name,
+                        rounds: [],
+                        eagles: 0,
+                        birdies: 0,
+                        pars: 0,
+                        bogeys: 0,
+                        doubleBogeys: 0,
+                        tripleBogeys: 0,
+                        quadrupleBogeys: 0,
+                        others: 0,
+                        holesInOne: 0
+                    };
+                });
+            });
+            
+            // Process round data
+            const course = courses[courses.length - 1];
+            rounds.forEach(round => {
+                if (round.completed && round.playerScores) {
+                    Object.keys(round.playerScores).forEach(playerName => {
+                        if (allPlayers[playerName]) {
+                            const scores = round.playerScores[playerName];
+                            let grossTotal = 0;
+                            let netTotal = 0;
+                            
+                            scores.forEach(holeScore => {
+                                grossTotal += holeScore.score;
+                                const hole = course.holes.find(h => h.number === holeScore.hole);
+                                const strokes = getStrokesForHole(allPlayers[playerName].handicap, hole.handicap);
+                                const netScore = holeScore.score - strokes;
+                                netTotal += Math.max(1, netScore);
+                                
+                                // Calculate statistics relative to par
+                                const scoreToPar = holeScore.score - hole.par;
+                                if (holeScore.score === 1) {
+                                    allPlayers[playerName].holesInOne++;
+                                } else if (scoreToPar <= -2) {
+                                    allPlayers[playerName].eagles++;
+                                } else if (scoreToPar === -1) {
+                                    allPlayers[playerName].birdies++;
+                                } else if (scoreToPar === 0) {
+                                    allPlayers[playerName].pars++;
+                                } else if (scoreToPar === 1) {
+                                    allPlayers[playerName].bogeys++;
+                                } else if (scoreToPar === 2) {
+                                    allPlayers[playerName].doubleBogeys++;
+                                } else if (scoreToPar === 3) {
+                                    allPlayers[playerName].tripleBogeys++;
+                                } else if (scoreToPar === 4) {
+                                    allPlayers[playerName].quadrupleBogeys++;
+                                } else if (scoreToPar > 4) {
+                                    allPlayers[playerName].others++;
+                                }
+                            });
+                            
+                            allPlayers[playerName].rounds.push({
+                                roundName: round.name,
+                                grossScore: grossTotal,
+                                netScore: netTotal
+                            });
+                        }
+                    });
+                }
+            });
+            
+            // Display player stats
+            Object.values(allPlayers).forEach(player => {
+                const playerDiv = document.createElement('div');
+                playerDiv.className = 'player-card';
+                
+                const photo = getPlayerPhoto(player.name);
+                const photoHtml = photo ? `<img src="${photo}" class="player-photo-display" alt="${player.name}">` : '';
+                
+                let roundsHtml = '';
+                player.rounds.forEach(round => {
+                    roundsHtml += `<p>${round.roundName}: Gross ${round.grossScore}, Net ${round.netScore}</p>`;
+                });
+                
+                playerDiv.innerHTML = `
+                    <div style="display: flex; align-items: center; margin-bottom: 1rem;">
+                        ${photoHtml}
+                        <div>
+                            <h4>${player.name} (${player.teamName}) - Handicap: ${player.handicap}</h4>
                         </div>
-                        <div class="summary-card">
-                            <div class="summary-value">${results.team2Points}</div>
-                            <div class="summary-label">${team2Name} Points</div>
+                    </div>
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-number">${player.holesInOne}</div>
+                            <div class="stat-label">Holes in One</div>
                         </div>
-                        <div class="summary-card">
-                            <div class="summary-value">${results.front9Team1}-${results.front9Team2}</div>
-                            <div class="summary-label">Front 9</div>
+                        <div class="stat-card">
+                            <div class="stat-number">${player.eagles}</div>
+                            <div class="stat-label">Eagles</div>
                         </div>
-                        ${courseData.holes === 18 ? `
-                        <div class="summary-card">
-                            <div class="summary-value">${results.back9Team1}-${results.back9Team2}</div>
-                            <div class="summary-label">Back 9</div>
+                        <div class="stat-card">
+                            <div class="stat-number">${player.birdies}</div>
+                            <div class="stat-label">Birdies</div>
                         </div>
+                        <div class="stat-card">
+                            <div class="stat-number">${player.pars}</div>
+                            <div class="stat-label">Pars</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number">${player.bogeys}</div>
+                            <div class="stat-label">Bogeys</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number">${player.doubleBogeys}</div>
+                            <div class="stat-label">Double Bogeys</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number">${player.tripleBogeys}</div>
+                            <div class="stat-label">Triple Bogeys</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number">${player.quadrupleBogeys}</div>
+                            <div class="stat-label">Quadruple Bogeys</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number">${player.others}</div>
+                            <div class="stat-label">Others (5+)</div>
+                        </div>
+                    </div>
+                    <h5>Round Scores</h5>
+                    ${roundsHtml || '<p>No completed rounds yet</p>'}
+                `;
+                container.appendChild(playerDiv);
+            });
+            
+            // Update MVP dropdown
+            updateMVPDropdown();
+        }
+
+        function updateMVPDropdown() {
+            const select = document.getElementById('mvp-select');
+            select.innerHTML = '<option value="">Select MVP</option>';
+            
+            teams.forEach(team => {
+                team.players.forEach(player => {
+                    const option = document.createElement('option');
+                    option.value = player.name;
+                    option.textContent = `${player.name} (${team.name})`;
+                    select.appendChild(option);
+                });
+            });
+        }
+
+        function setMVP() {
+            if (currentUser !== 'admin') {
+                checkAdminAccess('overall-scoring');
+                return;
+            }
+            
+            const mvpName = document.getElementById('mvp-select').value;
+            if (mvpName) {
+                localStorage.setItem('currentMVP', mvpName);
+                alert(`${mvpName} has been set as Tournament MVP!`);
+            }
+        }
+
+        function finalizeTournament() {
+            if (currentUser !== 'admin') {
+                checkAdminAccess('tournament-history');
+                return;
+            }
+            
+            if (!confirm('Are you sure you want to finalize this tournament? This cannot be undone.')) {
+                return;
+            }
+            
+            const tournamentYear = document.getElementById('tournament-year')?.value || new Date().getFullYear();
+            const mvp = localStorage.getItem('currentMVP') || 'Not selected';
+            
+            const tournament = {
+                id: Date.now(),
+                year: tournamentYear,
+                rounds: [...rounds],
+                teams: [...teams],
+                course: courses[courses.length - 1],
+                mvp: mvp,
+                finalizedDate: new Date().toISOString()
+            };
+            
+            tournaments.push(tournament);
+            localStorage.setItem('tournaments', JSON.stringify(tournaments));
+            
+            // Clear current tournament data
+            rounds = [];
+            localStorage.removeItem('rounds');
+            localStorage.removeItem('currentMVP');
+            
+            displayTournamentHistory();
+            alert('Tournament finalized and saved to history!');
+        }
+
+        function displayTournamentHistory() {
+            const container = document.getElementById('tournament-history-container');
+            container.innerHTML = '<h3>Past Tournaments</h3>';
+            
+            tournaments.forEach(tournament => {
+                const tournamentDiv = document.createElement('div');
+                tournamentDiv.className = 'player-card';
+                
+                let team1Total = 0;
+                let team2Total = 0;
+                tournament.rounds.forEach(round => {
+                    if (round.completed) {
+                        team1Total += round.team1Points;
+                        team2Total += round.team2Points;
+                    }
+                });
+                
+                const winner = team1Total > team2Total ? 'Team 1' : team2Total > team1Total ? 'Team 2' : 'Tie';
+                
+                // Get MVP photo
+                const mvpPhoto = getPlayerPhoto(tournament.mvp);
+                const mvpPhotoHtml = mvpPhoto ? `<img src="${mvpPhoto}" class="player-photo-display" alt="${tournament.mvp}">` : '';
+                
+                tournamentDiv.innerHTML = `
+                    <h4>${tournament.year} Brother Frank Cup</h4>
+                    <p><strong>Course:</strong> ${tournament.course?.name || 'Unknown'}</p>
+                    <p><strong>Winner:</strong> ${winner} (${Math.max(team1Total, team2Total)} points)</p>
+                    <p><strong>Final Score:</strong> Team 1: ${team1Total}, Team 2: ${team2Total}</p>
+                    <div style="display: flex; align-items: center; margin: 0.5rem 0;">
+                        ${mvpPhotoHtml}
+                        <span><strong>MVP:</strong> ${tournament.mvp}</span>
+                    </div>
+                    <p><strong>Finalized:</strong> ${new Date(tournament.finalizedDate).toLocaleDateString()}</p>
+                    <button class="btn" onclick="viewTournamentDetails(${tournament.id})">View Details</button>
+                `;
+                container.appendChild(tournamentDiv);
+            });
+            
+            if (tournaments.length === 0) {
+                container.innerHTML += '<p>No finalized tournaments yet.</p>';
+            }
+        }
+
+        function viewTournamentDetails(tournamentId) {
+            const tournament = tournaments.find(t => t.id === tournamentId);
+            if (!tournament) return;
+            
+            const detailsWindow = window.open('', '_blank', 'width=800,height=600,scrollbars=yes');
+            
+            // Generate player details with photos
+            let teamDetailsHtml = '';
+            tournament.teams.forEach(team => {
+                teamDetailsHtml += `<h4>${team.name}</h4><ul>`;
+                team.players.forEach(player => {
+                    const photo = getPlayerPhoto(player.name);
+                    const photoHtml = photo ? `<img src="${photo}" style="width: 40px; height: 40px; border-radius: 50%; margin-right: 10px; object-fit: cover; border: 2px solid #782F40;">` : '';
+                    teamDetailsHtml += `<li style="display: flex; align-items: center; margin: 0.5rem 0;">${photoHtml}${player.name} (Handicap: ${player.handicap})</li>`;
+                });
+                teamDetailsHtml += '</ul>';
+            });
+            
+            detailsWindow.document.write(`
+                <html>
+                <head>
+                    <title>${tournament.year} Brother Frank Cup Details</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; margin: 20px; }
+                        table { border-collapse: collapse; width: 100%; margin: 20px 0; }
+                        th, td { border: 1px solid #782F40; padding: 8px; text-align: center; }
+                        th { background: #782F40; color: #FFD700; }
+                        h1, h2 { color: #782F40; }
+                        .mvp-section { display: flex; align-items: center; margin: 20px 0; }
+                        .mvp-photo { width: 60px; height: 60px; border-radius: 50%; margin-right: 15px; border: 3px solid #782F40; object-fit: cover; }
+                    </style>
+                </head>
+                <body>
+                    <h1>${tournament.year} Brother Frank Cup - Tournament Details</h1>
+                    <h2>Course: ${tournament.course?.name || 'Unknown'}</h2>
+                    
+                    <div class="mvp-section">
+                        ${getPlayerPhoto(tournament.mvp) ? `<img src="${getPlayerPhoto(tournament.mvp)}" class="mvp-photo" alt="${tournament.mvp}">` : ''}
+                        <div>
+                            <h2>🏆 MVP: ${tournament.mvp}</h2>
+                        </div>
+                    </div>
+                    
+                    <h3>Round Results</h3>
+                    <table>
+                        <tr><th>Round</th><th>Team 1 Points</th><th>Team 2 Points</th><th>Status</th></tr>
+                        ${tournament.rounds.map(round => `
+                            <tr>
+                                <td>${round.name}</td>
+                                <td>${round.team1Points}</td>
+                                <td>${round.team2Points}</td>
+                                <td>${round.completed ? 'Complete' : 'Incomplete'}</td>
+                            </tr>
+                        `).join('')}
+                    </table>
+                    
+                    <h3>Teams</h3>
+                    ${teamDetailsHtml}
+                </body>
+                </html>
+            `);
+        }
+
+        function refreshTabContent(tabId) {
+            switch(tabId) {
+                case 'course-setup':
+                    displaySavedCourses();
+                    break;
+                case 'team-setup':
+                    displaySavedTeams();
+                    break;
+                case 'live-scoring':
+                    updateLiveScoring();
+                    break;
+                case 'overall-scoring':
+                    updateOverallScoring();
+                    updateMVPDropdown();
+                    break;
+                case 'player-stats':
+                    updatePlayerStats();
+                    break;
+                case 'tournament-history':
+                    displayTournamentHistory();
+                    break;
+            }
+        }
+
+        function createIndividualScorecard(matchIndex, roundName) {
+            const player1Name = document.getElementById(`match${matchIndex}-player1`).value;
+            const player2Name = document.getElementById(`match${matchIndex}-player2`).value;
+            
+            if (player1Name === player2Name) {
+                alert('Please select different players');
+                return;
+            }
+            
+            const player1 = teams.flatMap(t => t.players).find(p => p.name === player1Name);
+            const player2 = teams.flatMap(t => t.players).find(p => p.name === player2Name);
+            const course = courses[courses.length - 1];
+            
+            const scorecardContainer = document.getElementById(`individual-match-${matchIndex}-scorecard`);
+            scorecardContainer.innerHTML = `
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Hole</th>
+                            <th>Par</th>
+                            <th>Handicap</th>
+                            <th>${player1.name} (${player1.handicap})</th>
+                            <th>${player2.name} (${player2.handicap})</th>
+                            <th>${player1.name} Net</th>
+                            <th>${player2.name} Net</th>
+                            <th>Points</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${course.holes.map(hole => `
+                            <tr>
+                                <td>${hole.number}</td>
+                                <td>${hole.par}</td>
+                                <td>${hole.handicap}</td>
+                                <td><input type="number" class="scorecard-input" data-hole="${hole.number}" data-player="${player1.name}" data-match="${matchIndex}" onchange="calculateIndividualHoleScore(${hole.number}, ${matchIndex})" min="1" max="10"></td>
+                                <td><input type="number" class="scorecard-input" data-hole="${hole.number}" data-player="${player2.name}" data-match="${matchIndex}" onchange="calculateIndividualHoleScore(${hole.number}, ${matchIndex})" min="1" max="10"></td>
+                                <td id="player1-net-${matchIndex}-${hole.number}">-</td>
+                                <td id="player2-net-${matchIndex}-${hole.number}">-</td>
+                                <td id="points-${matchIndex}-${hole.number}">-</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <th colspan="5">Total Points</th>
+                            <th id="player1-total-${matchIndex}">0</th>
+                            <th id="player2-total-${matchIndex}">0</th>
+                            <th id="total-points-${matchIndex}">0</th>
+                        </tr>
+                    </tfoot>
+                </table>
+                <button class="btn" onclick="saveIndividualMatch(${matchIndex}, '${roundName}')">Save Match</button>
+                <button class="btn" onclick="completeIndividualMatch(${matchIndex}, '${roundName}')">Complete Match</button>
+            `;
+        }
+
+        function calculateIndividualHoleScore(holeNumber, matchIndex) {
+            const course = courses[courses.length - 1];
+            const hole = course.holes.find(h => h.number === holeNumber);
+            
+            const player1Input = document.querySelector(`[data-hole="${holeNumber}"][data-match="${matchIndex}"]`);
+            const player2Input = document.querySelectorAll(`[data-hole="${holeNumber}"][data-match="${matchIndex}"]`)[1];
+            
+            if (!player1Input?.value || !player2Input?.value) return;
+            
+            const player1Name = player1Input.dataset.player;
+            const player2Name = player2Input.dataset.player;
+            
+            const player1 = teams.flatMap(t => t.players).find(p => p.name === player1Name);
+            const player2 = teams.flatMap(t => t.players).find(p => p.name === player2Name);
+            
+            const player1Strokes = getStrokesForHole(player1.handicap, hole.handicap);
+            const player2Strokes = getStrokesForHole(player2.handicap, hole.handicap);
+            
+            const player1Net = Math.max(1, parseInt(player1Input.value) - player1Strokes);
+            const player2Net = Math.max(1, parseInt(player2Input.value) - player2Strokes);
+            
+            // Apply max score of 10
+            const player1NetFinal = Math.min(player1Net, 10);
+            const player2NetFinal = Math.min(player2Net, 10);
+            
+            document.getElementById(`player1-net-${matchIndex}-${holeNumber}`).textContent = player1NetFinal;
+            document.getElementById(`player2-net-${matchIndex}-${holeNumber}`).textContent = player2NetFinal;
+            
+            // Calculate points
+            let points = '-';
+            if (player1NetFinal < player2NetFinal) {
+                points = '1-0';
+            } else if (player2NetFinal < player1NetFinal) {
+                points = '0-1';
+            } else {
+                points = '0.5-0.5';
+            }
+            
+            document.getElementById(`points-${matchIndex}-${holeNumber}`).textContent = points;
+            
+            updateIndividualTotals(matchIndex);
+        }
+
+        function updateIndividualTotals(matchIndex) {
+            let player1Total = 0;
+            let player2Total = 0;
+            
+            for (let i = 1; i <= 18; i++) {
+                const pointsText = document.getElementById(`points-${matchIndex}-${i}`)?.textContent;
+                if (pointsText && pointsText !== '-') {
+                    const [p1, p2] = pointsText.split('-').map(p => parseFloat(p));
+                    player1Total += p1;
+                    player2Total += p2;
+                }
+            }
+            
+            document.getElementById(`player1-total-${matchIndex}`).textContent = player1Total;
+            document.getElementById(`player2-total-${matchIndex}`).textContent = player2Total;
+            document.getElementById(`total-points-${matchIndex}`).textContent = player1Total + player2Total;
+        }
+
+        function saveIndividualMatch(matchIndex, roundName) {
+            // Implementation for saving individual match
+            alert('Individual match saved!');
+        }
+
+        function completeIndividualMatch(matchIndex, roundName) {
+            saveIndividualMatch(matchIndex, roundName);
+            alert('Individual match completed!');
+        }
+
+        // Initialize the application
+        document.addEventListener('DOMContentLoaded', function() {
+            // Generate initial holes setup
+            if (document.getElementById('holes-container').children.length === 0) {
+                generateHoles();
+            }
+            
+            // Load saved data
+            refreshTabContent('course-setup');
+            
+            // Set current year as default
+            const currentYear = new Date().getFullYear();
+            document.getElementById('tournament-year').value = currentYear;
+        });
+
+        // Handle browser back/forward
+        window.addEventListener('popstate', function() {
+            // Handle navigation if needed
+        });
+
+        // Mobile optimization
+        if (window.innerWidth <= 768) {
+            document.addEventListener('touchstart', function() {
+                // Enable touch interactions
+            });
+        }
+
+        // Export functions for debugging
+        window.debugFunctions = {
+            courses: () => courses,
+            teams: () => teams,
+            rounds: () => rounds,
+            tournaments: () => tournaments,
+            clearAll: () => {
+                localStorage.clear();
+                location.reload();
+            }
+        };
+    </script>
+</body>
+</html>
