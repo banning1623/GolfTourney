@@ -663,6 +663,9 @@
         <div class="header">
             <h1>🏌️‍♂️ The Brother Frank Cup</h1>
             <p>Professional Tournament Management • Match Play Competition</p>
+            <div style="position: absolute; top: 10px; right: 15px; background: rgba(255,255,255,0.2); padding: 5px 10px; border-radius: 15px; font-size: 0.8rem;">
+                v2.1 - Dec 2024
+            </div>
         </div>
 
         <div class="tabs">
@@ -689,7 +692,7 @@
                             <option value="18" selected>18 Holes</option>
                         </select>
                     </div>
-                    <button class="action-btn" onclick="setupHoles()">Setup Holes</button>
+                    <button class="action-btn" onclick="setupHoles(); console.log('Setup Holes clicked - v2.1');">Setup Holes</button>
                 </div>
                 
                 <div id="validationMessage"></div>
@@ -843,8 +846,13 @@
         }
 
         function setupHoles() {
+            console.log('setupHoles() function called - v2.1');
+            
             const numHoles = parseInt(document.getElementById('numHoles').value);
             const courseName = document.getElementById('courseName').value;
+            
+            console.log('Number of holes:', numHoles);
+            console.log('Course name:', courseName);
             
             courseData.name = courseName;
             courseData.holes = numHoles;
@@ -860,8 +868,12 @@
                 }
             }
             
+            console.log('Updated courseData:', courseData);
+            
             renderHoleGrid();
             validateCourse();
+            
+            console.log('setupHoles() completed');
         }
 
         function renderHoleGrid() {
