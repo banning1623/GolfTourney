@@ -420,22 +420,34 @@
                 <div class="card">
                     <h3>Match Setup</h3>
                     <div class="form-group">
-                        <label for="matchType">Match Type:</label>
-                        <select id="matchType" onchange="updateMatchSetup()">
-                            <option value="2v2">2 vs 2</option>
-                            <option value="1v1">1 vs 1</option>
-                            <option value="4v4">4 vs 4 Alternate Shot</option>
-                        </select>
+                        <label for="roundName">Round Name:</label>
+                        <input type="text" id="roundName" placeholder="e.g., Thursday AM, Friday PM">
                     </div>
                     <div class="form-group">
-                        <label for="scoringType">Scoring Type (2v2 only):</label>
-                        <select id="scoringType">
-                            <option value="best">Best Net Score</option>
-                            <option value="combined">Combined Net Score</option>
+                        <label for="matchType">Match Type:</label>
+                        <select id="matchType" onchange="updateMatchSetup()">
+                            <option value="">Select match type...</option>
+                            <option value="2v2">2 vs 2 (2 matches)</option>
+                            <option value="1v1">1 vs 1 (8 matches)</option>
+                            <option value="4v4">4 vs 4 Alternate Shot (1 match)</option>
                         </select>
                     </div>
+                    <div id="scoringTypeContainer" style="display: none;">
+                        <div class="form-group">
+                            <label for="scoringType">Scoring Type (2v2 only):</label>
+                            <select id="scoringType">
+                                <option value="best">Best Net Score</option>
+                                <option value="combined">Combined Net Score</option>
+                            </select>
+                        </div>
+                    </div>
                     <div id="matchPairings"></div>
-                    <button class="btn" onclick="saveMatchSetup()">Save Match Setup</button>
+                    <button class="btn" onclick="saveRoundMatches()">Save Round Matches</button>
+                    
+                    <div id="savedRoundsDisplay" style="margin-top: 30px;">
+                        <h4>Saved Rounds</h4>
+                        <div id="savedRoundsList"></div>
+                    </div>
                 </div>
 
                 <div class="card">
@@ -621,6 +633,7 @@
                 scorecards = data.scorecards || {};
                 tournamentData = data.tournamentData || {};
                 tournamentYear = data.tournamentYear || 2025;
+                window.tournamentRounds = data.tournamentRounds || [];
             }
             updateDisplays();
         }
@@ -628,7 +641,8 @@
         // Save data to storage
         function saveData() {
             const data = {
-                teams, courseData, matches, groups, scorecards, tournamentData, tournamentYear
+                teams, courseData, matches, groups, scorecards, tournamentData, tournamentYear,
+                tournamentRounds: window.tournamentRounds || []
             };
             localStorage.setItem('brotherFrankCupData', JSON.stringify(data));
         }
@@ -798,77 +812,118 @@
         function updateMatchSetup() {
             const matchType = document.getElementById('matchType').value;
             const pairingsDiv = document.getElementById('matchPairings');
+            const scoringContainer = document.getElementById('scoringTypeContainer');
+            
+            if (!matchType) {
+                pairingsDiv.innerHTML = '';
+                scoringContainer.style.display = 'none';
+                return;
+            }
             
             if (matchType === '2v2') {
+                scoringContainer.style.display = 'block';
                 pairingsDiv.innerHTML = `
-                    <h4>2 vs 2 Matches</h4>
+                    <h4>2 vs 2 Matches (2 matches per round)</h4>
                     <div id="match2v2Setup"></div>
-                    <button class="btn" onclick="add2v2Match()">Add 2v2 Match</button>
                 `;
+                // Create exactly 2 matches for 2v2
+                for (let i = 0; i < 2; i++) {
+                    add2v2Match();
+                }
             } else if (matchType === '1v1') {
+                scoringContainer.style.display = 'none';
                 pairingsDiv.innerHTML = `
-                    <h4>1 vs 1 Matches (8 matches total)</h4>
+                    <h4>1 vs 1 Matches (8 matches per round)</h4>
                     <div id="match1v1Setup"></div>
-                    <button class="btn" onclick="add1v1Match()">Add 1v1 Match</button>
                 `;
+                // Create exactly 8 matches for 1v1
+                for (let i = 0; i < 8; i++) {
+                    add1v1Match();
+                }
             } else if (matchType === '4v4') {
+                scoringContainer.style.display = 'none';
                 pairingsDiv.innerHTML = `
-                    <h4>4 vs 4 Alternate Shot</h4>
+                    <h4>4 vs 4 Alternate Shot (1 match per round)</h4>
                     <div class="form-group">
                         <label>Team 1 Handicap:</label>
-                        <input type="number" id="team1AltShotHandicap" min="0" max="100">
+                        <input type="number" id="team1AltShotHandicap" min="0" max="100" placeholder="Enter team handicap">
                     </div>
                     <div class="form-group">
                         <label>Team 2 Handicap:</label>
-                        <input type="number" id="team2AltShotHandicap" min="0" max="100">
+                        <input type="number" id="team2AltShotHandicap" min="0" max="100" placeholder="Enter team handicap">
                     </div>
+                    <p><strong>Note:</strong> All 4 players from each team participate in alternate shot format.</p>
                 `;
             }
         }
 
         function add2v2Match() {
-            const matchId = Date.now();
+            const matchId = Date.now() + Math.random(); // Ensure unique IDs
             const setupDiv = document.getElementById('match2v2Setup');
+            const matchNumber = setupDiv.children.length + 1;
+            
             const matchDiv = document.createElement('div');
             matchDiv.className = 'match-setup';
             matchDiv.innerHTML = `
-                <h5>Match ${setupDiv.children.length + 1}</h5>
+                <h5>Match ${matchNumber}</h5>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-                    <div>
-                        <label>Team 1 Players:</label>
-                        <select id="team1Player1_${matchId}"></select>
-                        <select id="team1Player2_${matchId}"></select>
+                    <div style="border: 2px solid var(--garnet); padding: 15px; border-radius: 10px;">
+                        <h6>Team 1 Players</h6>
+                        <div class="form-group">
+                            <label>Player 1:</label>
+                            <select id="team1Player1_${matchId}"></select>
+                        </div>
+                        <div class="form-group">
+                            <label>Player 2:</label>
+                            <select id="team1Player2_${matchId}"></select>
+                        </div>
                     </div>
-                    <div>
-                        <label>Team 2 Players:</label>
-                        <select id="team2Player1_${matchId}"></select>
-                        <select id="team2Player2_${matchId}"></select>
+                    <div style="border: 2px solid var(--garnet); padding: 15px; border-radius: 10px;">
+                        <h6>Team 2 Players</h6>
+                        <div class="form-group">
+                            <label>Player 1:</label>
+                            <select id="team2Player1_${matchId}"></select>
+                        </div>
+                        <div class="form-group">
+                            <label>Player 2:</label>
+                            <select id="team2Player2_${matchId}"></select>
+                        </div>
                     </div>
                 </div>
-                <button class="btn btn-danger" onclick="removeMatch(this)">Remove Match</button>
+                <p style="text-align: center; margin-top: 10px; font-style: italic;">
+                    ${document.getElementById('team1Player1_' + matchId) ? teams[1].name || 'Team 1' : 'Team 1'} vs ${document.getElementById('team2Player1_' + matchId) ? teams[2].name || 'Team 2' : 'Team 2'}
+                </p>
             `;
             setupDiv.appendChild(matchDiv);
             populatePlayerDropdowns(matchId);
         }
 
         function add1v1Match() {
-            const matchId = Date.now();
+            const matchId = Date.now() + Math.random(); // Ensure unique IDs
             const setupDiv = document.getElementById('match1v1Setup');
+            const matchNumber = setupDiv.children.length + 1;
+            
             const matchDiv = document.createElement('div');
             matchDiv.className = 'match-setup';
             matchDiv.innerHTML = `
-                <h5>Match ${setupDiv.children.length + 1}</h5>
+                <h5>Match ${matchNumber}</h5>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-                    <div>
-                        <label>Team 1 Player:</label>
-                        <select id="team1Player_${matchId}"></select>
+                    <div style="border: 2px solid var(--garnet); padding: 15px; border-radius: 10px;">
+                        <h6>Team 1 Player</h6>
+                        <div class="form-group">
+                            <select id="team1Player_${matchId}"></select>
+                        </div>
                     </div>
-                    <div>
-                        <label>Team 2 Player:</label>
-                        <select id="team2Player_${matchId}"></select>
+                    <div style="border: 2px solid var(--garnet); padding: 15px; border-radius: 10px;">
+                        <h6>Team 2 Player</h6>
+                        <div class="form-group">
+                            <select id="team2Player_${matchId}"></select>
+                        </div>
                     </div>
                 </div>
-                <button class="btn btn-danger" onclick="removeMatch(this)">Remove Match</button>
+                <p style="text-align: center; margin-top: 10px; font-style: italic;">
+                    ${teams[1].name || 'Team 1'} vs ${teams[2].name || 'Team 2'}
+                </p>
             `;
             setupDiv.appendChild(matchDiv);
             populatePlayerDropdowns(matchId);
@@ -881,68 +936,204 @@
 
             team1Selects.forEach(select => {
                 select.innerHTML = '<option value="">Select player...</option>';
-                teams[1].players.forEach(player => {
-                    select.innerHTML += `<option value="${player.id}">${player.name} (${player.handicap})</option>`;
-                });
+                if (teams[1] && teams[1].players) {
+                    teams[1].players.forEach(player => {
+                        select.innerHTML += `<option value="${player.id}">${player.name} (HCP: ${player.handicap})</option>`;
+                    });
+                }
             });
 
             team2Selects.forEach(select => {
                 select.innerHTML = '<option value="">Select player...</option>';
-                teams[2].players.forEach(player => {
-                    select.innerHTML += `<option value="${player.id}">${player.name} (${player.handicap})</option>`;
-                });
+                if (teams[2] && teams[2].players) {
+                    teams[2].players.forEach(player => {
+                        select.innerHTML += `<option value="${player.id}">${player.name} (HCP: ${player.handicap})</option>`;
+                    });
+                }
             });
         }
 
-        function removeMatch(button) {
-            button.parentElement.remove();
-        }
-
-        function saveMatchSetup() {
-            // Save match configuration
-            matches = [];
+        function saveRoundMatches() {
+            const roundName = document.getElementById('roundName').value.trim();
             const matchType = document.getElementById('matchType').value;
+            
+            if (!roundName) {
+                alert('Please enter a round name (e.g., Thursday AM, Friday PM)');
+                return;
+            }
+            
+            if (!matchType) {
+                alert('Please select a match type');
+                return;
+            }
+            
+            // Initialize rounds array if it doesn't exist
+            if (!window.tournamentRounds) {
+                window.tournamentRounds = [];
+            }
+            
+            const roundData = {
+                id: Date.now(),
+                name: roundName,
+                type: matchType,
+                matches: [],
+                scoringType: matchType === '2v2' ? document.getElementById('scoringType').value : null
+            };
             
             if (matchType === '2v2') {
                 const matchDivs = document.querySelectorAll('#match2v2Setup .match-setup');
                 matchDivs.forEach((div, index) => {
                     const matchId = div.querySelector('select').id.split('_')[1];
-                    matches.push({
-                        type: '2v2',
-                        id: matchId,
-                        team1: [
-                            document.getElementById(`team1Player1_${matchId}`).value,
-                            document.getElementById(`team1Player2_${matchId}`).value
-                        ],
-                        team2: [
-                            document.getElementById(`team2Player1_${matchId}`).value,
-                            document.getElementById(`team2Player2_${matchId}`).value
-                        ],
-                        scoringType: document.getElementById('scoringType').value
-                    });
+                    const team1Player1 = document.getElementById(`team1Player1_${matchId}`)?.value;
+                    const team1Player2 = document.getElementById(`team1Player2_${matchId}`)?.value;
+                    const team2Player1 = document.getElementById(`team2Player1_${matchId}`)?.value;
+                    const team2Player2 = document.getElementById(`team2Player2_${matchId}`)?.value;
+                    
+                    if (team1Player1 && team1Player2 && team2Player1 && team2Player2) {
+                        roundData.matches.push({
+                            type: '2v2',
+                            matchNumber: index + 1,
+                            team1: [team1Player1, team1Player2],
+                            team2: [team2Player1, team2Player2],
+                            team1Names: [getPlayerById(team1Player1)?.name, getPlayerById(team1Player2)?.name],
+                            team2Names: [getPlayerById(team2Player1)?.name, getPlayerById(team2Player2)?.name]
+                        });
+                    }
                 });
+                
+                if (roundData.matches.length !== 2) {
+                    alert('Please complete all 2 matches for 2v2 round');
+                    return;
+                }
+                
             } else if (matchType === '1v1') {
                 const matchDivs = document.querySelectorAll('#match1v1Setup .match-setup');
                 matchDivs.forEach((div, index) => {
                     const matchId = div.querySelector('select').id.split('_')[1];
-                    matches.push({
-                        type: '1v1',
-                        id: matchId,
-                        team1: [document.getElementById(`team1Player_${matchId}`).value],
-                        team2: [document.getElementById(`team2Player_${matchId}`).value]
-                    });
+                    const team1Player = document.getElementById(`team1Player_${matchId}`)?.value;
+                    const team2Player = document.getElementById(`team2Player_${matchId}`)?.value;
+                    
+                    if (team1Player && team2Player) {
+                        roundData.matches.push({
+                            type: '1v1',
+                            matchNumber: index + 1,
+                            team1: [team1Player],
+                            team2: [team2Player],
+                            team1Names: [getPlayerById(team1Player)?.name],
+                            team2Names: [getPlayerById(team2Player)?.name]
+                        });
+                    }
                 });
+                
+                if (roundData.matches.length !== 8) {
+                    alert('Please complete all 8 matches for 1v1 round');
+                    return;
+                }
+                
             } else if (matchType === '4v4') {
-                matches.push({
+                const team1Handicap = document.getElementById('team1AltShotHandicap').value;
+                const team2Handicap = document.getElementById('team2AltShotHandicap').value;
+                
+                if (!team1Handicap || !team2Handicap) {
+                    alert('Please enter handicaps for both teams');
+                    return;
+                }
+                
+                roundData.matches.push({
                     type: '4v4',
-                    id: Date.now(),
-                    team1Handicap: document.getElementById('team1AltShotHandicap').value,
-                    team2Handicap: document.getElementById('team2AltShotHandicap').value
+                    matchNumber: 1,
+                    team1Handicap: parseInt(team1Handicap),
+                    team2Handicap: parseInt(team2Handicap),
+                    team1: teams[1].players.map(p => p.id),
+                    team2: teams[2].players.map(p => p.id),
+                    team1Names: teams[1].players.map(p => p.name),
+                    team2Names: teams[2].players.map(p => p.name)
                 });
             }
-
+            
+            // Save the round
+            window.tournamentRounds.push(roundData);
+            
+            // Update matches array for compatibility
+            matches = matches.concat(roundData.matches);
+            
             saveData();
-            alert('Match setup saved successfully!');
+            displaySavedRounds();
+            
+            // Clear the form
+            document.getElementById('roundName').value = '';
+            document.getElementById('matchType').value = '';
+            updateMatchSetup();
+            
+            alert(`Round "${roundName}" saved successfully with ${roundData.matches.length} matches!`);
+        }
+
+        function displaySavedRounds() {
+            const displayDiv = document.getElementById('savedRoundsList');
+            
+            if (!window.tournamentRounds || window.tournamentRounds.length === 0) {
+                displayDiv.innerHTML = '<p>No rounds saved yet.</p>';
+                return;
+            }
+            
+            let html = '';
+            window.tournamentRounds.forEach((round, roundIndex) => {
+                html += `
+                    <div class="card" style="margin-bottom: 15px;">
+                        <div style="display: flex; justify-content: between; align-items: center;">
+                            <h5>${round.name} (${round.type.toUpperCase()})</h5>
+                            <button class="btn btn-danger" onclick="deleteRound(${roundIndex})" style="margin-left: auto;">Delete Round</button>
+                        </div>
+                        ${round.scoringType ? `<p><strong>Scoring:</strong> ${round.scoringType === 'best' ? 'Best Net Score' : 'Combined Net Score'}</p>` : ''}
+                        <div style="margin-top: 10px;">
+                `;
+                
+                round.matches.forEach(match => {
+                    if (match.type === '2v2') {
+                        html += `
+                            <div style="border-left: 4px solid var(--garnet); padding-left: 10px; margin-bottom: 8px;">
+                                <strong>Match ${match.matchNumber}:</strong> 
+                                ${match.team1Names.join(' & ')} vs ${match.team2Names.join(' & ')}
+                            </div>
+                        `;
+                    } else if (match.type === '1v1') {
+                        html += `
+                            <div style="border-left: 4px solid var(--garnet); padding-left: 10px; margin-bottom: 8px;">
+                                <strong>Match ${match.matchNumber}:</strong> 
+                                ${match.team1Names[0]} vs ${match.team2Names[0]}
+                            </div>
+                        `;
+                    } else if (match.type === '4v4') {
+                        html += `
+                            <div style="border-left: 4px solid var(--garnet); padding-left: 10px; margin-bottom: 8px;">
+                                <strong>Alternate Shot:</strong> 
+                                ${teams[1].name} (HCP: ${match.team1Handicap}) vs ${teams[2].name} (HCP: ${match.team2Handicap})
+                            </div>
+                        `;
+                    }
+                });
+                
+                html += `
+                        </div>
+                    </div>
+                `;
+            });
+            
+            displayDiv.innerHTML = html;
+        }
+
+        function deleteRound(roundIndex) {
+            if (confirm('Are you sure you want to delete this round? This action cannot be undone.')) {
+                window.tournamentRounds.splice(roundIndex, 1);
+                // Rebuild matches array
+                matches = [];
+                window.tournamentRounds.forEach(round => {
+                    matches = matches.concat(round.matches);
+                });
+                saveData();
+                displaySavedRounds();
+                alert('Round deleted successfully!');
+            }
         }
 
         // Group setup functions
@@ -1013,7 +1204,8 @@
                     groups.push({
                         id: groupId,
                         players: players,
-                        name: `Group ${index + 1}`
+                        name: `Group ${index + 1}`,
+                        scorekeeper: null
                     });
                 }
             });
@@ -1021,21 +1213,79 @@
             saveData();
             alert('Group setup saved successfully!');
             updateGroupSelect();
+            updateScorekeeperAssignment();
         }
 
         // Scorekeeper assignment
-        function saveScorekeeperAssignment() {
-            // Implementation for assigning scorekeepers to groups
-            const assignment = {};
+        function updateScorekeeperAssignment() {
+            const assignmentDiv = document.getElementById('scorekeeperAssignment');
+            
+            if (groups.length === 0) {
+                assignmentDiv.innerHTML = '<p>Please set up groups first before assigning scorekeepers.</p>';
+                return;
+            }
+            
+            let html = '';
+            
             groups.forEach(group => {
-                const scorekeeperId = prompt(`Select scorekeeper for ${group.name}:`);
-                if (scorekeeperId) {
-                    assignment[group.id] = scorekeeperId;
+                html += `
+                    <div class="match-setup">
+                        <h5>${group.name}</h5>
+                        <p><strong>Group Members:</strong></p>
+                        <ul>
+                `;
+                
+                group.players.forEach(playerId => {
+                    const player = getPlayerById(playerId);
+                    if (player) {
+                        html += `<li>${player.name} (Team ${teams[1].players.find(p => p.id === playerId) ? '1' : '2'})</li>`;
+                    }
+                });
+                
+                html += `
+                        </ul>
+                        <div class="form-group">
+                            <label for="scorekeeper_${group.id}">Select Scorekeeper for ${group.name}:</label>
+                            <select id="scorekeeper_${group.id}">
+                                <option value="">Select a scorekeeper...</option>
+                `;
+                
+                group.players.forEach(playerId => {
+                    const player = getPlayerById(playerId);
+                    if (player) {
+                        const isSelected = group.scorekeeper === playerId ? 'selected' : '';
+                        html += `<option value="${playerId}" ${isSelected}>${player.name}</option>`;
+                    }
+                });
+                
+                html += `
+                            </select>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            assignmentDiv.innerHTML = html;
+        }
+
+        function saveScorekeeperAssignment() {
+            let assignmentsMade = 0;
+            
+            groups.forEach(group => {
+                const scorekeeperSelect = document.getElementById(`scorekeeper_${group.id}`);
+                if (scorekeeperSelect && scorekeeperSelect.value) {
+                    group.scorekeeper = scorekeeperSelect.value;
+                    assignmentsMade++;
                 }
             });
             
+            if (assignmentsMade === 0) {
+                alert('Please select at least one scorekeeper.');
+                return;
+            }
+            
             saveData();
-            alert('Scorekeeper assignments saved!');
+            alert(`Scorekeeper assignments saved! ${assignmentsMade} of ${groups.length} groups have scorekeepers assigned.`);
         }
 
         // Tournament year functions
@@ -2148,6 +2398,8 @@
         function updateDisplays() {
             if (currentUser === 'admin') {
                 updateHoleSetup();
+                updateScorekeeperAssignment();
+                displaySavedRounds();
                 updateOverallScoring();
                 updatePlayerStatistics();
                 updateTournamentHistory();
