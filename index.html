@@ -1937,7 +1937,14 @@ function refreshTabContent(tabId) {
 
         // Course Setup Functions
         function generateHoles() {
+            console.log('generateHoles function called'); // Debug log
+            
             const container = document.getElementById('holes-container');
+            if (!container) {
+                console.error('holes-container not found');
+                return;
+            }
+            
             container.innerHTML = `
                 <h4>Front 9 (Holes 1-9)</h4>
                 <table class="table">
@@ -1979,11 +1986,17 @@ function refreshTabContent(tabId) {
                     </tbody>
                 </table>
             `;
+            
+            console.log('Holes generated successfully'); // Debug log
         }
 
         function saveCourse() {
+            console.log('saveCourse function called'); // Debug log
+            
             const courseName = document.getElementById('course-name').value;
             const tournamentYear = document.getElementById('tournament-year').value;
+            
+            console.log('Course name:', courseName, 'Year:', tournamentYear); // Debug log
             
             if (!courseName || !tournamentYear) {
                 alert('Please enter course name and tournament year');
@@ -1991,20 +2004,40 @@ function refreshTabContent(tabId) {
             }
 
             const holes = [];
+            let missingHoles = [];
+            
             for (let i = 1; i <= 18; i++) {
-                const par = document.querySelector(`.hole-par[data-hole="${i}"]`).value;
-                const handicap = document.querySelector(`.hole-handicap[data-hole="${i}"]`).value;
+                const parInput = document.querySelector(`.hole-par[data-hole="${i}"]`);
+                const handicapInput = document.querySelector(`.hole-handicap[data-hole="${i}"]`);
+                
+                const par = parInput ? parInput.value : '';
+                const handicap = handicapInput ? handicapInput.value : '';
+                
+                console.log(`Hole ${i}: Par=${par}, Handicap=${handicap}`); // Debug log
                 
                 if (!par || !handicap) {
-                    alert(`Please complete hole ${i} information`);
-                    return;
+                    missingHoles.push(i);
+                } else {
+                    holes.push({
+                        number: i,
+                        par: parseInt(par),
+                        handicap: parseInt(handicap)
+                    });
                 }
-                
-                holes.push({
-                    number: i,
-                    par: parseInt(par),
-                    handicap: parseInt(handicap)
-                });
+            }
+
+            if (missingHoles.length > 0) {
+                alert(`Please complete information for holes: ${missingHoles.join(', ')}`);
+                return;
+            }
+
+            // Validate handicap numbers (should be 1-18, each used once)
+            const handicapNumbers = holes.map(h => h.handicap).sort((a, b) => a - b);
+            const expectedHandicaps = Array.from({length: 18}, (_, i) => i + 1);
+            
+            if (JSON.stringify(handicapNumbers) !== JSON.stringify(expectedHandicaps)) {
+                alert('Handicap numbers must be 1-18, each used exactly once');
+                return;
             }
 
             const course = {
@@ -2014,14 +2047,23 @@ function refreshTabContent(tabId) {
                 holes: holes
             };
 
-            courses.push(course);
-            localStorage.setItem('courses', JSON.stringify(courses));
-            displaySavedCourses();
-            
-            // Generate scorecards for all rounds
-            generateAllScorecards(course);
-            
-            alert('Course saved successfully and scorecards generated!');
+            console.log('Course object created:', course); // Debug log
+
+            try {
+                courses.push(course);
+                localStorage.setItem('courses', JSON.stringify(courses));
+                console.log('Course saved to localStorage'); // Debug log
+                
+                displaySavedCourses();
+                
+                // Generate scorecards for all rounds
+                generateAllScorecards(course);
+                
+                alert('Course saved successfully and scorecards generated!');
+            } catch (error) {
+                console.error('Error saving course:', error);
+                alert('Error saving course. Please try again.');
+            }
         }
 
         function generateAllScorecards(course) {
@@ -4020,17 +4062,32 @@ function refreshTabContent(tabId) {
 
         // Initialize the application
         document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM Content Loaded - Initializing application'); // Debug log
+            
             // Generate initial holes setup
-            if (document.getElementById('holes-container').children.length === 0) {
+            const holesContainer = document.getElementById('holes-container');
+            if (holesContainer && holesContainer.children.length === 0) {
+                console.log('Generating initial holes setup'); // Debug log
                 generateHoles();
+            } else {
+                console.log('Holes container not found or already has content'); // Debug log
             }
             
             // Load saved data
             refreshTabContent('course-setup');
             
             // Set current year as default
-            const currentYear = new Date().getFullYear();
-            document.getElementById('tournament-year').value = currentYear;
+            const yearInput = document.getElementById('tournament-year');
+            if (yearInput) {
+                const currentYear = new Date().getFullYear();
+                yearInput.value = currentYear;
+                console.log('Set default year to:', currentYear); // Debug log
+            }
+            
+            // Debug: Show current data
+            console.log('Current courses:', courses);
+            console.log('Current teams:', teams);
+            console.log('Current match setups:', matchSetups);
         });
 
         // Handle browser back/forward
