@@ -42,7 +42,20 @@ function calculateStrokes(playerHandicap, holeHandicap) {
             }
             
             // Update display
-            const frontCell = document.getElementById(`front_${groupId}_<!DOCTYPE html>
+            const frontCell = document.getElementById(`front_${groupId}_${playerId}`);
+            const backCell = document.getElementById(`back_${groupId}_${playerId}`);
+            const totalCell = document.getElementById(`total_${groupId}_${playerId}`);
+            const netFrontCell = document.getElementById(`netfront_${groupId}_${playerId}`);
+            const netBackCell = document.getElementById(`netback_${groupId}_${playerId}`);
+            const netTotalCell = document.getElementById(`nettotal_${groupId}_${playerId}`);
+            
+            if (frontCell) frontCell.textContent = frontTotal > 0 ? frontTotal : '-';
+            if (backCell) backCell.textContent = backTotal > 0 ? backTotal : '-';
+            if (totalCell) totalCell.textContent = (frontTotal + backTotal) > 0 ? (frontTotal + backTotal) : '-';
+            if (netFrontCell) netFrontCell.textContent = netFrontTotal > 0 ? netFrontTotal : '-';
+            if (netBackCell) netBackCell.textContent = netBackTotal > 0 ? netBackTotal : '-';
+            if (netTotalCell) netTotalCell.textContent = (netFrontTotal + netBackTotal) > 0 ? (netFrontTotal + netBackTotal) : '-';
+        }<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -403,6 +416,9 @@ function calculateStrokes(playerHandicap, holeHandicap) {
     <div class="header">
         <h1>Brother Frank Cup</h1>
         <p id="tournamentYear">2025 Tournament</p>
+        <div id="connectionStatus" style="margin-top: 10px; font-size: 0.9em;">
+            <span id="statusIndicator">🔄 Connecting to cloud...</span>
+        </div>
     </div>
 
     <div class="container">
@@ -513,6 +529,39 @@ function calculateStrokes(playerHandicap, holeHandicap) {
                         <label for="tournamentYearInput">Tournament Year:</label>
                         <input type="number" id="tournamentYearInput" min="2020" max="2050" value="2025">
                         <button class="btn" onclick="updateTournamentYear()">Update Year</button>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>Data Management</h3>
+                    <p><strong>Multi-Device Tournament:</strong> Use these tools to transfer data between devices.</p>
+                    
+                    <div class="form-group">
+                        <label>Export Complete Tournament Data:</label>
+                        <button class="btn" onclick="exportTournamentData()">Export All Data</button>
+                        <small style="display: block; margin-top: 5px; color: var(--dark-garnet);">
+                            Downloads complete tournament data file for importing on other devices
+                        </small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="importFile">Import Tournament Data:</label>
+                        <input type="file" id="importFile" accept=".json" onchange="handleImportFile(this)">
+                        <small style="display: block; margin-top: 5px; color: var(--dark-garnet);">
+                            Upload tournament data file exported from another device
+                        </small>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Quick Sync Instructions:</label>
+                        <div style="background-color: var(--light-gold); padding: 15px; border-radius: 5px; border: 1px solid var(--garnet);">
+                            <strong>On-Course Scoring Solution:</strong><br>
+                            1. Export data from laptop before going to course<br>
+                            2. Import data file on phone/tablet at course<br>
+                            3. Enter scores on mobile devices<br>
+                            4. Export data from phone after round<br>
+                            5. Import updated data back to laptop<br>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -647,7 +696,25 @@ function calculateStrokes(playerHandicap, holeHandicap) {
         </div>
     </div>
 
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    
     <script>
+        // Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyBN2oj0ud2FEdUEJ8CH39DkCOA1zKU9PaI",
+            authDomain: "brotherfrankcup.firebaseapp.com",
+            databaseURL: "https://brotherfrankcup-default-rtdb.firebaseio.com/",
+            projectId: "brotherfrankcup",
+            storageBucket: "brotherfrankcup.firebasestorage.app",
+            messagingSenderId: "857568799868",
+            appId: "1:857568799868:web:9afeadb401b3e77d3aadf9"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+
         // Global variables
         let currentUser = null;
         let teams = {1: {name: '', players: []}, 2: {name: '', players: []}};
@@ -657,6 +724,172 @@ function calculateStrokes(playerHandicap, holeHandicap) {
         let scorecards = {};
         let tournamentData = {};
         let tournamentYear = 2025;
+
+        // Connection status management
+        function updateConnectionStatus(status, message) {
+            const indicator = document.getElementById('statusIndicator');
+            if (indicator) {
+                switch(status) {
+                    case 'connected':
+                        indicator.innerHTML = '✅ Connected - Real-time sync active';
+                        indicator.style.color = '#28a745';
+                        break;
+                    case 'disconnected':
+                        indicator.innerHTML = '❌ Offline - Using local storage';
+                        indicator.style.color = '#dc3545';
+                        break;
+                    case 'connecting':
+                        indicator.innerHTML = '🔄 Connecting to cloud...';
+                        indicator.style.color = '#ffc107';
+                        break;
+                    case 'error':
+                        indicator.innerHTML = '⚠️ Connection error - Using local backup';
+                        indicator.style.color = '#fd7e14';
+                        break;
+                }
+            }
+        }
+
+        // Enhanced Firebase functions with status updates
+        function saveToFirebase() {
+            const data = {
+                teams, courseData, matches, groups, scorecards, tournamentData, tournamentYear,
+                tournamentRounds: window.tournamentRounds || [],
+                lastUpdated: new Date().toISOString()
+            };
+            
+            updateConnectionStatus('connecting', 'Saving data...');
+            
+            database.ref('tournament').set(data)
+                .then(() => {
+                    console.log('Data saved to Firebase successfully');
+                    updateConnectionStatus('connected', 'Data saved successfully');
+                })
+                .catch((error) => {
+                    console.error('Error saving to Firebase:', error);
+                    updateConnectionStatus('error', 'Save failed, using local backup');
+                    // Fall back to localStorage
+                    localStorage.setItem('brotherFrankCupData', JSON.stringify(data));
+                });
+        }
+
+        function loadFromFirebase() {
+            return new Promise((resolve, reject) => {
+                updateConnectionStatus('connecting', 'Loading tournament data...');
+                
+                // Check connection first
+                const connectedRef = database.ref('.info/connected');
+                connectedRef.on('value', (snapshot) => {
+                    if (snapshot.val() === true) {
+                        updateConnectionStatus('connected', 'Connected to Firebase');
+                    } else {
+                        updateConnectionStatus('disconnected', 'No internet connection');
+                    }
+                });
+
+                database.ref('tournament').once('value')
+                    .then((snapshot) => {
+                        const data = snapshot.val();
+                        if (data) {
+                            teams = data.teams || {1: {name: '', players: []}, 2: {name: '', players: []}};
+                            courseData = data.courseData || {name: '', holes: [], roundType: 18};
+                            matches = data.matches || [];
+                            groups = data.groups || [];
+                            scorecards = data.scorecards || {};
+                            tournamentData = data.tournamentData || {};
+                            tournamentYear = data.tournamentYear || 2025;
+                            window.tournamentRounds = data.tournamentRounds || [];
+                            console.log('Data loaded from Firebase successfully');
+                            updateConnectionStatus('connected', 'Tournament data loaded from cloud');
+                        } else {
+                            console.log('No cloud data found, checking local storage');
+                            loadFromLocalStorage();
+                            updateConnectionStatus('connected', 'Connected - No cloud data found');
+                        }
+                        resolve(data);
+                    })
+                    .catch((error) => {
+                        console.error('Error loading from Firebase:', error);
+                        updateConnectionStatus('error', 'Failed to load from cloud');
+                        // Fall back to localStorage
+                        loadFromLocalStorage();
+                        reject(error);
+                    });
+            });
+        }
+
+        function loadFromLocalStorage() {
+            try {
+                const stored = localStorage.getItem('brotherFrankCupData');
+                if (stored) {
+                    const data = JSON.parse(stored);
+                    teams = data.teams || {1: {name: '', players: []}, 2: {name: '', players: []}};
+                    courseData = data.courseData || {name: '', holes: [], roundType: 18};
+                    matches = data.matches || [];
+                    groups = data.groups || [];
+                    scorecards = data.scorecards || {};
+                    tournamentData = data.tournamentData || {};
+                    tournamentYear = data.tournamentYear || 2025;
+                    window.tournamentRounds = data.tournamentRounds || [];
+                }
+            } catch (error) {
+                console.error('Error loading from localStorage:', error);
+            }
+        }
+
+        // Listen for real-time updates
+        function setupRealtimeListeners() {
+            // Listen for scorecard updates
+            database.ref('tournament/scorecards').on('value', (snapshot) => {
+                const newScorecards = snapshot.val();
+                if (newScorecards && JSON.stringify(newScorecards) !== JSON.stringify(scorecards)) {
+                    scorecards = newScorecards;
+                    updateLiveScoring();
+                    console.log('Scorecards updated from Firebase');
+                }
+            });
+
+            // Listen for tournament data updates
+            database.ref('tournament').on('value', (snapshot) => {
+                const data = snapshot.val();
+                if (data && data.lastUpdated) {
+                    // Only update if this is a newer update (prevent infinite loops)
+                    const currentTime = new Date().toISOString();
+                    if (data.lastUpdated !== currentTime) {
+                        // Update local data without triggering another save
+                        teams = data.teams || teams;
+                        courseData = data.courseData || courseData;
+                        matches = data.matches || matches;
+                        groups = data.groups || groups;
+                        tournamentData = data.tournamentData || tournamentData;
+                        tournamentYear = data.tournamentYear || tournamentYear;
+                        window.tournamentRounds = data.tournamentRounds || window.tournamentRounds;
+                        
+                        updateDisplaysQuiet();
+                    }
+                }
+            });
+        }
+
+        // Update displays without triggering Firebase saves
+        function updateDisplaysQuiet() {
+            try {
+                if (currentUser === 'admin') {
+                    updateHoleSetup();
+                    updateScorekeeperAssignment();
+                    displaySavedRounds();
+                    updateOverallScoring();
+                    updatePlayerStatistics();
+                    updateTournamentHistory();
+                }
+                
+                if (currentUser === 'scorer' || currentUser === 'admin') {
+                    updateLiveScoring();
+                }
+            } catch (error) {
+                console.error('Error updating displays:', error);
+            }
+        }
 
         // Initialize the application
         function initializeApp() {
@@ -1539,12 +1772,25 @@ function calculateStrokes(playerHandicap, holeHandicap) {
             alert(`Scorekeeper assignments saved! ${assignmentsMade} of ${groups.length} groups have scorekeepers assigned.`);
         }
 
-        // Tournament year functions
-        function updateTournamentYear() {
-            document.getElementById('tournamentYearInput').value = tournamentYear;
-            document.getElementById('tournamentYear').textContent = `${tournamentYear} Tournament`;
+        // File import handler
+        function handleImportFile(input) {
+            const file = input.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const jsonData = e.target.result;
+                    importTournamentData(jsonData);
+                } catch (error) {
+                    alert('Error reading file. Please ensure it\'s a valid tournament data file.');
+                    console.error('File read error:', error);
+                }
+            };
+            reader.readAsText(file);
         }
 
+        // Tournament year functions
         function updateTournamentYear() {
             tournamentYear = parseInt(document.getElementById('tournamentYearInput').value);
             document.getElementById('tournamentYear').textContent = `${tournamentYear} Tournament`;
@@ -1891,38 +2137,70 @@ function calculateStrokes(playerHandicap, holeHandicap) {
         // Live scoring functions
         function updateLiveScoring() {
             const display = document.getElementById('liveScoreDisplay');
+            
+            // Check if we have tournament rounds configured
+            if (!window.tournamentRounds || window.tournamentRounds.length === 0) {
+                display.innerHTML = '<div class="card"><p>No tournament rounds configured yet. Please set up rounds in the Golf Course Setup tab.</p></div>';
+                return;
+            }
+            
             let html = '';
             
-            matches.forEach(match => {
-                html += createLiveMatchDisplay(match);
+            // Display each round with its matches
+            window.tournamentRounds.forEach(round => {
+                html += `<div class="card"><h3>${round.name} (${round.type.toUpperCase()})</h3>`;
+                
+                round.matches.forEach(match => {
+                    try {
+                        html += createLiveMatchDisplay(match, round.scoringType);
+                    } catch (error) {
+                        console.error('Error creating live match display:', error);
+                        html += `<p>Error displaying match data</p>`;
+                    }
+                });
+                
+                html += '</div>';
             });
             
-            display.innerHTML = html || '<p>No matches configured yet. Please set up matches in the Course Setup tab.</p>';
+            display.innerHTML = html || '<div class="card"><p>No matches configured yet. Please set up matches in the Golf Course Setup tab.</p></div>';
         }
 
-        function createLiveMatchDisplay(match) {
-            if (match.type === '2v2') {
-                return create2v2LiveDisplay(match);
-            } else if (match.type === '1v1') {
-                return create1v1LiveDisplay(match);
-            } else if (match.type === '4v4') {
-                return create4v4LiveDisplay(match);
+        function createLiveMatchDisplay(match, roundScoringType) {
+            try {
+                if (match.type === '2v2') {
+                    return create2v2LiveDisplay(match, roundScoringType);
+                } else if (match.type === '1v1') {
+                    return create1v1LiveDisplay(match);
+                } else if (match.type === '4v4') {
+                    return create4v4LiveDisplay(match);
+                }
+            } catch (error) {
+                console.error('Error in createLiveMatchDisplay:', error);
+                return '<p>Error displaying this match</p>';
             }
             return '';
         }
 
-        function create2v2LiveDisplay(match) {
+        function create2v2LiveDisplay(match, scoringType) {
+            // Get actual player objects
             const team1Players = match.team1.map(id => getPlayerById(id)).filter(p => p);
             const team2Players = match.team2.map(id => getPlayerById(id)).filter(p => p);
             
+            if (team1Players.length !== 2 || team2Players.length !== 2) {
+                return `<p>Error: Incomplete team data for 2v2 match</p>`;
+            }
+            
+            const actualScoringType = scoringType || match.scoringType || 'best';
+            
             let html = `
                 <div class="live-score-match">
-                    <h4>2v2 Match: ${team1Players.map(p => p.name).join(' & ')} vs ${team2Players.map(p => p.name).join(' & ')}</h4>
+                    <h4>2v2 Match ${match.matchNumber}: ${team1Players.map(p => p.name).join(' & ')} vs ${team2Players.map(p => p.name).join(' & ')}</h4>
+                    <p><strong>Scoring:</strong> ${actualScoringType === 'best' ? 'Best Net Score' : 'Combined Net Score'}</p>
                     <div class="mobile-responsive">
                         <table class="scorecard-table">
                             <thead>
                                 <tr>
-                                    <th>Hole</th>
+                                    <th>Team</th>
                                     ${courseData.holes.slice(0, 9).map(h => `<th>${h.number}</th>`).join('')}
                                     <th>Bonus</th>
                                     <th>Total</th>
@@ -1933,9 +2211,9 @@ function calculateStrokes(playerHandicap, holeHandicap) {
             `;
             
             // Team 1 display
-            html += createTeamLiveRow(team1Players, 1, match);
+            html += createTeamLiveRow(match.team1, 1, match, actualScoringType);
             // Team 2 display  
-            html += createTeamLiveRow(team2Players, 2, match);
+            html += createTeamLiveRow(match.team2, 2, match, actualScoringType);
             // Points row
             html += createPointsRow(match);
             
@@ -1953,11 +2231,13 @@ function calculateStrokes(playerHandicap, holeHandicap) {
             const team1Player = getPlayerById(match.team1[0]);
             const team2Player = getPlayerById(match.team2[0]);
             
-            if (!team1Player || !team2Player) return '';
+            if (!team1Player || !team2Player) {
+                return `<p>Error: Player data not found for 1v1 match</p>`;
+            }
             
             let html = `
                 <div class="live-score-match">
-                    <h4>1v1 Match: ${team1Player.name} vs ${team2Player.name}</h4>
+                    <h4>1v1 Match ${match.matchNumber}: ${team1Player.name} vs ${team2Player.name}</h4>
                     <div class="mobile-responsive">
                         <table class="scorecard-table">
                             <thead>
@@ -1972,8 +2252,8 @@ function calculateStrokes(playerHandicap, holeHandicap) {
                             <tbody>
             `;
             
-            html += createPlayerLiveRow(team1Player, match);
-            html += createPlayerLiveRow(team2Player, match);
+            html += createPlayerLiveRow(match.team1[0], match, 1);
+            html += createPlayerLiveRow(match.team2[0], match, 2);
             html += createPointsRow(match);
             
             html += `
@@ -1983,6 +2263,90 @@ function calculateStrokes(playerHandicap, holeHandicap) {
                 </div>
             `;
             
+            return html;
+        }
+
+        function createTeamLiveRow(playerIds, teamNum, match, scoringType) {
+            const teamName = teamNum === 1 ? (teams[1].name || 'Team 1') : (teams[2].name || 'Team 2');
+            const players = playerIds.map(id => getPlayerById(id)).filter(p => p);
+            
+            if (players.length === 0) {
+                return `<tr><td colspan="20">Error: No players found for team ${teamNum}</td></tr>`;
+            }
+            
+            let html = `
+                <tr>
+                    <td><strong>${teamName}</strong><br>
+            `;
+            
+            players.forEach(player => {
+                html += `${player.name} (${player.handicap})<br>`;
+            });
+            
+            html += `</td>`;
+            
+            // Add hole scores based on match scoring type
+            courseData.holes.slice(0, 9).forEach(hole => {
+                const teamScore = calculateTeamScore(playerIds, hole.number, scoringType);
+                html += `<td>${teamScore !== null ? teamScore : '-'}</td>`;
+            });
+            
+            // Calculate front nine points
+            const frontPoints = calculateNinePoints(match, 1, 9);
+            html += `<td>${frontPoints.bonus[`team${teamNum}`]}</td>`;
+            html += `<td>${frontPoints.total[`team${teamNum}`]}</td>`;
+            
+            // Back nine if 18 holes
+            if (courseData.holes.length > 9) {
+                courseData.holes.slice(9).forEach(hole => {
+                    const teamScore = calculateTeamScore(playerIds, hole.number, scoringType);
+                    html += `<td>${teamScore !== null ? teamScore : '-'}</td>`;
+                });
+                
+                const backPoints = calculateNinePoints(match, 10, 18);
+                html += `<td>${backPoints.bonus[`team${teamNum}`]}</td>`;
+                html += `<td>${backPoints.total[`team${teamNum}`]}</td>`;
+            }
+            
+            html += `</tr>`;
+            return html;
+        }
+
+        function createPlayerLiveRow(playerId, match, teamNum) {
+            const player = getPlayerById(playerId);
+            if (!player) {
+                return `<tr><td colspan="20">Error: Player not found</td></tr>`;
+            }
+            
+            let html = `
+                <tr>
+                    <td><strong>${player.name}</strong><br>(HCP: ${player.handicap})</td>
+            `;
+            
+            // Front nine scores
+            courseData.holes.slice(0, 9).forEach(hole => {
+                const netScore = getPlayerNetScore(playerId, hole.number);
+                html += `<td>${netScore !== null ? netScore : '-'}</td>`;
+            });
+            
+            // Calculate front nine points for this player's matches
+            const frontPoints = calculateNinePoints(match, 1, 9);
+            html += `<td>${frontPoints.bonus[`team${teamNum}`]}</td>`;
+            html += `<td>${frontPoints.total[`team${teamNum}`]}</td>`;
+            
+            // Back nine if 18 holes
+            if (courseData.holes.length > 9) {
+                courseData.holes.slice(9).forEach(hole => {
+                    const netScore = getPlayerNetScore(playerId, hole.number);
+                    html += `<td>${netScore !== null ? netScore : '-'}</td>`;
+                });
+                
+                const backPoints = calculateNinePoints(match, 10, 18);
+                html += `<td>${frontPoints.bonus[`team${teamNum}`]}</td>`;
+                html += `<td>${frontPoints.total[`team${teamNum}`]}</td>`;
+            }
+            
+            html += `</tr>`;
             return html;
         }
 
