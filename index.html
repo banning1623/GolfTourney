@@ -32,6 +32,13 @@ function refreshTabContent(tabId) {
             const select = document.getElementById('round-select');
             select.innerHTML = '<option value="">Choose a round</option>';
             
+            console.log('Match setups available:', Object.keys(matchSetups)); // Debug log
+            
+            if (Object.keys(matchSetups).length === 0) {
+                select.innerHTML = '<option value="">No rounds set up yet - Go to Match Setup first</option>';
+                return;
+            }
+            
             Object.keys(matchSetups).forEach(roundName => {
                 const option = document.createElement('option');
                 option.value = roundName;
@@ -2681,14 +2688,19 @@ function refreshTabContent(tabId) {
             const roundName = roundSelect.value;
             const roundInfo = document.getElementById('round-info');
             
+            console.log('Loading round setup for:', roundName); // Debug log
+            
             if (!roundName) {
                 roundInfo.classList.add('hidden');
                 return;
             }
             
             const matchSetup = matchSetups[roundName];
+            console.log('Match setup found:', matchSetup); // Debug log
+            
             if (!matchSetup) {
-                alert('No match setup found for this round. Please set up the match first.');
+                alert('No match setup found for this round. Please set up the match first in the Match Setup tab.');
+                roundSelect.value = ''; // Reset selection
                 return;
             }
             
