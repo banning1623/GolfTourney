@@ -105,15 +105,63 @@ function updateOverallScoring() {
                         totalScore: 0,
                         birdiesAndBetter: 0,
                         pars: 0,
-                        bogeyOrWorse: 0
+                        bogeyOrWorse: 0,
+                        wins: 0,
+                        losses: 0,
+                        ties: 0
                     };
                 });
             });
             
             // Process round data for MVP calculation
             const course = courses[courses.length - 1];
+            if (!course) {
+                leaderboardContent.innerHTML = '<p>Please set up a course first to see MVP candidates.</p>';
+                return;
+            }
+            
             rounds.forEach(round => {
                 if (round.completed && round.playerScores) {
+                    // Calculate match results for win/loss tracking
+                    if (round.matchType === '2v2-best' || round.matchType === '2v2-combined') {
+                        const team1Players = [];
+                        const team2Players = [];
+                        
+                        // Categorize players by team
+                        Object.keys(round.playerScores).forEach(playerName => {
+                            const playerTeam = teams.find(team => team.players.some(p => p.name === playerName));
+                            if (playerTeam) {
+                                if (playerTeam === teams[0]) {
+                                    team1Players.push(playerName);
+                                } else {
+                                    team2Players.push(playerName);
+                                }
+                            }
+                        });
+                        
+                        // Update win/loss records
+                        if (round.team1Points > round.team2Points) {
+                            team1Players.forEach(playerName => {
+                                if (playerStats[playerName]) playerStats[playerName].wins++;
+                            });
+                            team2Players.forEach(playerName => {
+                                if (playerStats[playerName]) playerStats[playerName].losses++;
+                            });
+                        } else if (round.team2Points > round.team1Points) {
+                            team2Players.forEach(playerName => {
+                                if (playerStats[playerName]) playerStats[playerName].wins++;
+                            });
+                            team1Players.forEach(playerName => {
+                                if (playerStats[playerName]) playerStats[playerName].losses++;
+                            });
+                        } else {
+                            [...team1Players, ...team2Players].forEach(playerName => {
+                                if (playerStats[playerName]) playerStats[playerName].ties++;
+                            });
+                        }
+                    }
+                    
+                    // Process scoring statistics
                     Object.keys(round.playerScores).forEach(playerName => {
                         if (playerStats[playerName]) {
                             const scores = round.playerScores[playerName];
@@ -122,14 +170,16 @@ function updateOverallScoring() {
                             scores.forEach(holeScore => {
                                 playerStats[playerName].totalScore += holeScore.score;
                                 const hole = course.holes.find(h => h.number === holeScore.hole);
-                                const scoreToPar = holeScore.score - hole.par;
-                                
-                                if (scoreToPar <= -1) {
-                                    playerStats[playerName].birdiesAndBetter++;
-                                } else if (scoreToPar === 0) {
-                                    playerStats[playerName].pars++;
-                                } else {
-                                    playerStats[playerName].bogeyOrWorse++;
+                                if (hole) {
+                                    const scoreToPar = holeScore.score - hole.par;
+                                    
+                                    if (scoreToPar <= -1) {
+                                        playerStats[playerName].birdiesAndBetter++;
+                                    } else if (scoreToPar === 0) {
+                                        playerStats[playerName].pars++;
+                                    } else {
+                                        playerStats[playerName].bogeyOrWorse++;
+                                    }
                                 }
                             });
                             
@@ -144,7 +194,9 @@ function updateOverallScoring() {
                 .filter(player => player.totalRounds > 0)
                 .map(player => {
                     const mvpScore = (player.birdiesAndBetter * 3 + player.pars * 1) - player.averageScore;
-                    return { ...player, mvpScore };
+                    const winPercentage = player.wins + player.losses + player.ties > 0 ? 
+                        (player.wins + player.ties * 0.5) / (player.wins + player.losses + player.ties) : 0;
+                    return { ...player, mvpScore: mvpScore + (winPercentage * 2) }; // Add win percentage bonus
                 })
                 .sort((a, b) => b.mvpScore - a.mvpScore)
                 .slice(0, 3);
@@ -171,6 +223,7 @@ function updateOverallScoring() {
                             <div class="leaderboard-name">${candidate.name}</div>
                             <div class="leaderboard-score">
                                 ${candidate.teamName} | Avg: ${candidate.averageScore.toFixed(1)} | 
+                                Record: ${candidate.wins}-${candidate.losses}-${candidate.ties} | 
                                 Birdies+: ${candidate.birdiesAndBetter} | Pars: ${candidate.pars}
                             </div>
                         </div>
@@ -618,7 +671,7 @@ function updateOverallScoring() {
                         <input type="number" class="player-handicap" placeholder="Handicap" min="0" max="36">
                     </div>
                     <div class="form-group">
-                        <label>Player 1 Photo:</label>
+                        <label>Player 1 Photo (Optional):</label>
                         <input type="file" class="player-photo" accept="image/*" onchange="handlePhotoUpload(this, 0)">
                         <div class="photo-preview" id="photo-preview-0"></div>
                     </div>
@@ -633,7 +686,7 @@ function updateOverallScoring() {
                         <input type="number" class="player-handicap" placeholder="Handicap" min="0" max="36">
                     </div>
                     <div class="form-group">
-                        <label>Player 2 Photo:</label>
+                        <label>Player 2 Photo (Optional):</label>
                         <input type="file" class="player-photo" accept="image/*" onchange="handlePhotoUpload(this, 1)">
                         <div class="photo-preview" id="photo-preview-1"></div>
                     </div>
@@ -648,7 +701,7 @@ function updateOverallScoring() {
                         <input type="number" class="player-handicap" placeholder="Handicap" min="0" max="36">
                     </div>
                     <div class="form-group">
-                        <label>Player 3 Photo:</label>
+                        <label>Player 3 Photo (Optional):</label>
                         <input type="file" class="player-photo" accept="image/*" onchange="handlePhotoUpload(this, 2)">
                         <div class="photo-preview" id="photo-preview-2"></div>
                     </div>
@@ -663,7 +716,7 @@ function updateOverallScoring() {
                         <input type="number" class="player-handicap" placeholder="Handicap" min="0" max="36">
                     </div>
                     <div class="form-group">
-                        <label>Player 4 Photo:</label>
+                        <label>Player 4 Photo (Optional):</label>
                         <input type="file" class="player-photo" accept="image/*" onchange="handlePhotoUpload(this, 3)">
                         <div class="photo-preview" id="photo-preview-3"></div>
                     </div>
@@ -802,18 +855,48 @@ function updateOverallScoring() {
 
         // Photo handling functions
         function handlePhotoUpload(input, playerIndex) {
+            console.log('Photo upload triggered for player', playerIndex); // Debug log
+            
             if (input.files && input.files[0]) {
                 const file = input.files[0];
+                
+                // Check file size (limit to 5MB)
+                if (file.size > 5 * 1024 * 1024) {
+                    alert('Photo file is too large. Please choose a file under 5MB.');
+                    return;
+                }
+                
+                // Check file type
+                if (!file.type.startsWith('image/')) {
+                    alert('Please select an image file.');
+                    return;
+                }
+                
                 const reader = new FileReader();
                 
                 reader.onload = function(e) {
-                    const photoData = e.target.result;
-                    const preview = document.getElementById(`photo-preview-${playerIndex}`);
-                    preview.innerHTML = `<img src="${photoData}" alt="Player photo">`;
-                    
-                    // Store photo temporarily
-                    if (!window.tempPhotos) window.tempPhotos = {};
-                    window.tempPhotos[playerIndex] = photoData;
+                    try {
+                        const photoData = e.target.result;
+                        const preview = document.getElementById(`photo-preview-${playerIndex}`);
+                        
+                        if (preview) {
+                            preview.innerHTML = `<img src="${photoData}" alt="Player photo">`;
+                        }
+                        
+                        // Store photo temporarily
+                        if (!window.tempPhotos) window.tempPhotos = {};
+                        window.tempPhotos[playerIndex] = photoData;
+                        
+                        console.log(`Photo processed for player ${playerIndex}`); // Debug log
+                    } catch (error) {
+                        console.error('Error processing photo:', error);
+                        alert('Error processing photo. Please try again.');
+                    }
+                };
+                
+                reader.onerror = function() {
+                    console.error('Error reading file');
+                    alert('Error reading photo file. Please try again.');
                 };
                 
                 reader.readAsDataURL(file);
@@ -821,14 +904,30 @@ function updateOverallScoring() {
         }
 
         function savePlayerPhoto(playerName, photoData) {
-            if (photoData) {
-                playerPhotos[playerName] = photoData;
-                localStorage.setItem('playerPhotos', JSON.stringify(playerPhotos));
+            try {
+                if (photoData && playerName) {
+                    if (!playerPhotos) {
+                        playerPhotos = {};
+                    }
+                    playerPhotos[playerName] = photoData;
+                    localStorage.setItem('playerPhotos', JSON.stringify(playerPhotos));
+                    console.log(`Photo saved for ${playerName}`); // Debug log
+                    return true;
+                }
+            } catch (error) {
+                console.error('Error saving player photo:', error);
+                return false;
             }
+            return false;
         }
 
         function getPlayerPhoto(playerName) {
-            return playerPhotos[playerName] || null;
+            try {
+                return playerPhotos[playerName] || null;
+            } catch (error) {
+                console.error('Error getting player photo:', error);
+                return null;
+            }
         }
 
         // Tab functionality
@@ -975,7 +1074,440 @@ function updateOverallScoring() {
             courses.push(course);
             localStorage.setItem('courses', JSON.stringify(courses));
             displaySavedCourses();
-            alert('Course saved successfully!');
+            
+            // Generate scorecards for all rounds
+            generateAllScorecards(course);
+            
+            alert('Course saved successfully and scorecards generated!');
+        }
+
+        function generateAllScorecards(course) {
+            // Create a comprehensive set of scorecard templates
+            const scorecardTemplates = {
+                course: course,
+                rounds: [
+                    { name: 'Thursday AM', type: '2v2-best', maxPoints: 18 },
+                    { name: 'Thursday PM', type: '2v2-combined', maxPoints: 18 },
+                    { name: 'Friday AM', type: '2v2-best', maxPoints: 18 },
+                    { name: 'Friday PM', type: '2v2-combined', maxPoints: 18 },
+                    { name: 'Saturday AM', type: '1v1', maxPoints: 8, matches: 8 },
+                    { name: 'Saturday PM', type: '2v2-best', maxPoints: 18 }
+                ],
+                totalPoints: 440
+            };
+            
+            // Save scorecard templates
+            localStorage.setItem('scorecardTemplates', JSON.stringify(scorecardTemplates));
+            
+            // Generate printable scorecards
+            generatePrintableScorecards(scorecardTemplates);
+        }
+
+        function generatePrintableScorecards(templates) {
+            // Create a new window with all scorecard templates
+            const scorecardWindow = window.open('', '_blank', 'width=1000,height=800,scrollbars=yes');
+            
+            let scorecardHTML = `
+                <html>
+                <head>
+                    <title>${templates.course.name} - Brother Frank Cup Scorecards</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; margin: 20px; }
+                        .scorecard { 
+                            page-break-after: always; 
+                            margin-bottom: 40px; 
+                            border: 3px solid #782F40; 
+                            padding: 20px;
+                            border-radius: 10px;
+                        }
+                        .scorecard:last-child { page-break-after: avoid; }
+                        .header { 
+                            text-align: center; 
+                            color: #782F40; 
+                            margin-bottom: 20px;
+                            background: linear-gradient(135deg, #FFD700, #FFA500);
+                            padding: 15px;
+                            border-radius: 8px;
+                            border: 2px solid #782F40;
+                        }
+                        .course-info { 
+                            display: flex; 
+                            justify-content: space-between; 
+                            margin-bottom: 20px;
+                            background: #f8f9fa;
+                            padding: 10px;
+                            border-radius: 5px;
+                        }
+                        table { 
+                            width: 100%; 
+                            border-collapse: collapse; 
+                            margin: 15px 0; 
+                        }
+                        th, td { 
+                            border: 2px solid #782F40; 
+                            padding: 8px; 
+                            text-align: center; 
+                            min-width: 35px;
+                        }
+                        th { 
+                            background: #782F40; 
+                            color: #FFD700; 
+                            font-weight: bold; 
+                        }
+                        .hole-number { background: #FFD700; color: #782F40; font-weight: bold; }
+                        .player-row { background: #f8f9fa; }
+                        .net-row { background: #e9ecef; }
+                        .points-row { background: #FFD700; color: #782F40; font-weight: bold; }
+                        .match-info {
+                            background: #782F40;
+                            color: #FFD700;
+                            padding: 10px;
+                            border-radius: 5px;
+                            margin: 10px 0;
+                            text-align: center;
+                            font-weight: bold;
+                        }
+                        .team-section {
+                            border: 2px solid #782F40;
+                            margin: 10px 0;
+                            padding: 10px;
+                            border-radius: 5px;
+                        }
+                        .signature-line {
+                            border-top: 2px solid #782F40;
+                            margin-top: 30px;
+                            padding-top: 10px;
+                            text-align: center;
+                        }
+                        @media print {
+                            .scorecard { page-break-after: always; }
+                            body { margin: 0; }
+                        }
+                    </style>
+                </head>
+                <body>
+            `;
+
+            // Generate team match scorecards
+            templates.rounds.forEach(round => {
+                if (round.type !== '1v1') {
+                    scorecardHTML += generateTeamScorecardTemplate(templates.course, round);
+                } else {
+                    // Generate individual match scorecards
+                    for (let i = 1; i <= round.matches; i++) {
+                        scorecardHTML += generateIndividualScorecardTemplate(templates.course, round, i);
+                    }
+                }
+            });
+
+            scorecardHTML += `
+                </body>
+                </html>
+            `;
+
+            scorecardWindow.document.write(scorecardHTML);
+            scorecardWindow.document.close();
+        }
+
+        function generateTeamScorecardTemplate(course, round) {
+            return `
+                <div class="scorecard">
+                    <div class="header">
+                        <h1>Brother Frank Cup</h1>
+                        <h2>${course.name} (${course.year})</h2>
+                    </div>
+                    
+                    <div class="match-info">
+                        ${round.name} - ${round.type === '2v2-best' ? '2v2 Best Net Score' : '2v2 Combined Net Score'}
+                        <br>Maximum Points: ${round.maxPoints}
+                    </div>
+
+                    <div class="course-info">
+                        <div><strong>Date:</strong> _______________</div>
+                        <div><strong>Weather:</strong> _______________</div>
+                        <div><strong>Scorer:</strong> _______________</div>
+                    </div>
+
+                    <div class="team-section">
+                        <h3>Team 1:</h3>
+                        <p>Player 1: _________________________ Handicap: _____</p>
+                        <p>Player 2: _________________________ Handicap: _____</p>
+                    </div>
+
+                    <div class="team-section">
+                        <h3>Team 2:</h3>
+                        <p>Player 1: _________________________ Handicap: _____</p>
+                        <p>Player 2: _________________________ Handicap: _____</p>
+                    </div>
+
+                    <!-- Front 9 -->
+                    <h3>Front 9</h3>
+                    <table>
+                        <tr class="hole-number">
+                            <th>Hole</th>
+                            ${course.holes.slice(0, 9).map(hole => `<th>${hole.number}</th>`).join('')}
+                            <th>OUT</th>
+                        </tr>
+                        <tr>
+                            <th>Par</th>
+                            ${course.holes.slice(0, 9).map(hole => `<td>${hole.par}</td>`).join('')}
+                            <td>${course.holes.slice(0, 9).reduce((sum, hole) => sum + hole.par, 0)}</td>
+                        </tr>
+                        <tr>
+                            <th>Handicap</th>
+                            ${course.holes.slice(0, 9).map(hole => `<td>${hole.handicap}</td>`).join('')}
+                            <td>-</td>
+                        </tr>
+                        <tr class="player-row">
+                            <th>Team 1 P1</th>
+                            ${course.holes.slice(0, 9).map(() => `<td></td>`).join('')}
+                            <td></td>
+                        </tr>
+                        <tr class="player-row">
+                            <th>Team 1 P2</th>
+                            ${course.holes.slice(0, 9).map(() => `<td></td>`).join('')}
+                            <td></td>
+                        </tr>
+                        <tr class="player-row">
+                            <th>Team 2 P1</th>
+                            ${course.holes.slice(0, 9).map(() => `<td></td>`).join('')}
+                            <td></td>
+                        </tr>
+                        <tr class="player-row">
+                            <th>Team 2 P2</th>
+                            ${course.holes.slice(0, 9).map(() => `<td></td>`).join('')}
+                            <td></td>
+                        </tr>
+                        <tr class="net-row">
+                            <th>Team 1 Net</th>
+                            ${course.holes.slice(0, 9).map(() => `<td></td>`).join('')}
+                            <td></td>
+                        </tr>
+                        <tr class="net-row">
+                            <th>Team 2 Net</th>
+                            ${course.holes.slice(0, 9).map(() => `<td></td>`).join('')}
+                            <td></td>
+                        </tr>
+                        <tr class="points-row">
+                            <th>Points</th>
+                            ${course.holes.slice(0, 9).map(() => `<td></td>`).join('')}
+                            <td></td>
+                        </tr>
+                    </table>
+
+                    <!-- Back 9 -->
+                    <h3>Back 9</h3>
+                    <table>
+                        <tr class="hole-number">
+                            <th>Hole</th>
+                            ${course.holes.slice(9, 18).map(hole => `<th>${hole.number}</th>`).join('')}
+                            <th>IN</th>
+                            <th>TOTAL</th>
+                        </tr>
+                        <tr>
+                            <th>Par</th>
+                            ${course.holes.slice(9, 18).map(hole => `<td>${hole.par}</td>`).join('')}
+                            <td>${course.holes.slice(9, 18).reduce((sum, hole) => sum + hole.par, 0)}</td>
+                            <td>${course.holes.reduce((sum, hole) => sum + hole.par, 0)}</td>
+                        </tr>
+                        <tr>
+                            <th>Handicap</th>
+                            ${course.holes.slice(9, 18).map(hole => `<td>${hole.handicap}</td>`).join('')}
+                            <td>-</td>
+                            <td>-</td>
+                        </tr>
+                        <tr class="player-row">
+                            <th>Team 1 P1</th>
+                            ${course.holes.slice(9, 18).map(() => `<td></td>`).join('')}
+                            <td></td>
+                            <td></td>
+                        </tr>
+                        <tr class="player-row">
+                            <th>Team 1 P2</th>
+                            ${course.holes.slice(9, 18).map(() => `<td></td>`).join('')}
+                            <td></td>
+                            <td></td>
+                        </tr>
+                        <tr class="player-row">
+                            <th>Team 2 P1</th>
+                            ${course.holes.slice(9, 18).map(() => `<td></td>`).join('')}
+                            <td></td>
+                            <td></td>
+                        </tr>
+                        <tr class="player-row">
+                            <th>Team 2 P2</th>
+                            ${course.holes.slice(9, 18).map(() => `<td></td>`).join('')}
+                            <td></td>
+                            <td></td>
+                        </tr>
+                        <tr class="net-row">
+                            <th>Team 1 Net</th>
+                            ${course.holes.slice(9, 18).map(() => `<td></td>`).join('')}
+                            <td></td>
+                            <td></td>
+                        </tr>
+                        <tr class="net-row">
+                            <th>Team 2 Net</th>
+                            ${course.holes.slice(9, 18).map(() => `<td></td>`).join('')}
+                            <td></td>
+                            <td></td>
+                        </tr>
+                        <tr class="points-row">
+                            <th>Points</th>
+                            ${course.holes.slice(9, 18).map(() => `<td></td>`).join('')}
+                            <td></td>
+                            <td><strong>TOTAL POINTS</strong></td>
+                        </tr>
+                    </table>
+
+                    <div style="display: flex; justify-content: space-between; margin-top: 20px; font-weight: bold;">
+                        <div>Team 1 Points: _______</div>
+                        <div>Team 2 Points: _______</div>
+                    </div>
+
+                    <div class="signature-line">
+                        <strong>Scorer Signature:</strong> _________________________ 
+                        <strong>Date:</strong> _____________
+                    </div>
+                </div>
+            `;
+        }
+
+        function generateIndividualScorecardTemplate(course, round, matchNumber) {
+            return `
+                <div class="scorecard">
+                    <div class="header">
+                        <h1>Brother Frank Cup</h1>
+                        <h2>${course.name} (${course.year})</h2>
+                    </div>
+                    
+                    <div class="match-info">
+                        ${round.name} - Individual Match ${matchNumber}
+                        <br>Maximum Points: 1 (Winner takes all)
+                    </div>
+
+                    <div class="course-info">
+                        <div><strong>Date:</strong> _______________</div>
+                        <div><strong>Weather:</strong> _______________</div>
+                        <div><strong>Scorer:</strong> _______________</div>
+                    </div>
+
+                    <div class="team-section">
+                        <h3>Match ${matchNumber} Players:</h3>
+                        <p>Player 1: _________________________ Handicap: _____ Team: _________</p>
+                        <p>Player 2: _________________________ Handicap: _____ Team: _________</p>
+                    </div>
+
+                    <!-- Front 9 -->
+                    <h3>Front 9</h3>
+                    <table>
+                        <tr class="hole-number">
+                            <th>Hole</th>
+                            ${course.holes.slice(0, 9).map(hole => `<th>${hole.number}</th>`).join('')}
+                            <th>OUT</th>
+                        </tr>
+                        <tr>
+                            <th>Par</th>
+                            ${course.holes.slice(0, 9).map(hole => `<td>${hole.par}</td>`).join('')}
+                            <td>${course.holes.slice(0, 9).reduce((sum, hole) => sum + hole.par, 0)}</td>
+                        </tr>
+                        <tr>
+                            <th>Handicap</th>
+                            ${course.holes.slice(0, 9).map(hole => `<td>${hole.handicap}</td>`).join('')}
+                            <td>-</td>
+                        </tr>
+                        <tr class="player-row">
+                            <th>Player 1</th>
+                            ${course.holes.slice(0, 9).map(() => `<td></td>`).join('')}
+                            <td></td>
+                        </tr>
+                        <tr class="player-row">
+                            <th>Player 2</th>
+                            ${course.holes.slice(0, 9).map(() => `<td></td>`).join('')}
+                            <td></td>
+                        </tr>
+                        <tr class="net-row">
+                            <th>Player 1 Net</th>
+                            ${course.holes.slice(0, 9).map(() => `<td></td>`).join('')}
+                            <td></td>
+                        </tr>
+                        <tr class="net-row">
+                            <th>Player 2 Net</th>
+                            ${course.holes.slice(0, 9).map(() => `<td></td>`).join('')}
+                            <td></td>
+                        </tr>
+                        <tr class="points-row">
+                            <th>Points</th>
+                            ${course.holes.slice(0, 9).map(() => `<td></td>`).join('')}
+                            <td></td>
+                        </tr>
+                    </table>
+
+                    <!-- Back 9 -->
+                    <h3>Back 9</h3>
+                    <table>
+                        <tr class="hole-number">
+                            <th>Hole</th>
+                            ${course.holes.slice(9, 18).map(hole => `<th>${hole.number}</th>`).join('')}
+                            <th>IN</th>
+                            <th>TOTAL</th>
+                        </tr>
+                        <tr>
+                            <th>Par</th>
+                            ${course.holes.slice(9, 18).map(hole => `<td>${hole.par}</td>`).join('')}
+                            <td>${course.holes.slice(9, 18).reduce((sum, hole) => sum + hole.par, 0)}</td>
+                            <td>${course.holes.reduce((sum, hole) => sum + hole.par, 0)}</td>
+                        </tr>
+                        <tr>
+                            <th>Handicap</th>
+                            ${course.holes.slice(9, 18).map(hole => `<td>${hole.handicap}</td>`).join('')}
+                            <td>-</td>
+                            <td>-</td>
+                        </tr>
+                        <tr class="player-row">
+                            <th>Player 1</th>
+                            ${course.holes.slice(9, 18).map(() => `<td></td>`).join('')}
+                            <td></td>
+                            <td></td>
+                        </tr>
+                        <tr class="player-row">
+                            <th>Player 2</th>
+                            ${course.holes.slice(9, 18).map(() => `<td></td>`).join('')}
+                            <td></td>
+                            <td></td>
+                        </tr>
+                        <tr class="net-row">
+                            <th>Player 1 Net</th>
+                            ${course.holes.slice(9, 18).map(() => `<td></td>`).join('')}
+                            <td></td>
+                            <td></td>
+                        </tr>
+                        <tr class="net-row">
+                            <th>Player 2 Net</th>
+                            ${course.holes.slice(9, 18).map(() => `<td></td>`).join('')}
+                            <td></td>
+                            <td></td>
+                        </tr>
+                        <tr class="points-row">
+                            <th>Points</th>
+                            ${course.holes.slice(9, 18).map(() => `<td></td>`).join('')}
+                            <td></td>
+                            <td><strong>WINNER</strong></td>
+                        </tr>
+                    </table>
+
+                    <div style="display: flex; justify-content: space-between; margin-top: 20px; font-weight: bold;">
+                        <div>Player 1 Points: _______</div>
+                        <div>Player 2 Points: _______</div>
+                        <div>Match Winner: _____________</div>
+                    </div>
+
+                    <div class="signature-line">
+                        <strong>Scorer Signature:</strong> _________________________ 
+                        <strong>Date:</strong> _____________
+                    </div>
+                </div>
+            `;
         }
 
         function deleteCourse() {
@@ -1026,6 +1558,8 @@ function updateOverallScoring() {
 
         // Team Setup Functions
         function saveTeam() {
+            console.log('saveTeam function called'); // Debug log
+            
             const teamName = document.getElementById('team-name').value;
             if (!teamName) {
                 alert('Please enter team name');
@@ -1035,9 +1569,16 @@ function updateOverallScoring() {
             const players = [];
             const playerCards = document.querySelectorAll('.player-card');
             
+            console.log('Found player cards:', playerCards.length); // Debug log
+            
             playerCards.forEach((card, index) => {
-                const name = card.querySelector('.player-name').value;
-                const handicap = card.querySelector('.player-handicap').value;
+                const nameInput = card.querySelector('.player-name');
+                const handicapInput = card.querySelector('.player-handicap');
+                
+                const name = nameInput ? nameInput.value.trim() : '';
+                const handicap = handicapInput ? handicapInput.value : '';
+                
+                console.log(`Player ${index + 1}: ${name}, Handicap: ${handicap}`); // Debug log
                 
                 if (name && handicap) {
                     const player = {
@@ -1045,19 +1586,43 @@ function updateOverallScoring() {
                         handicap: parseInt(handicap)
                     };
                     
-                    // Save photo if uploaded
-                    if (window.tempPhotos && window.tempPhotos[index]) {
-                        savePlayerPhoto(name, window.tempPhotos[index]);
-                        player.hasPhoto = true;
+                    // Save photo if uploaded (optional - won't block team saving)
+                    try {
+                        if (window.tempPhotos && window.tempPhotos[index]) {
+                            const photoSaved = savePlayerPhoto(name, window.tempPhotos[index]);
+                            if (photoSaved) {
+                                player.hasPhoto = true;
+                                console.log(`Photo saved for ${name}`); // Debug log
+                            } else {
+                                console.log(`Photo not saved for ${name}, continuing without photo`); // Debug log
+                            }
+                        } else {
+                            console.log(`No photo provided for ${name}`); // Debug log
+                        }
+                    } catch (error) {
+                        console.error('Error with photo for', name, error);
+                        // Continue without photo - photos are optional
                     }
                     
                     players.push(player);
+                } else {
+                    if (!name) console.log(`Player ${index + 1}: Missing name`);
+                    if (!handicap) console.log(`Player ${index + 1}: Missing handicap`);
                 }
             });
 
-            if (players.length < 4) {
-                alert('Please enter all 4 players');
+            console.log('Players collected:', players.length); // Debug log
+
+            if (players.length === 0) {
+                alert('Please enter at least one player');
                 return;
+            }
+
+            if (players.length < 4) {
+                const proceed = confirm(`You've only entered ${players.length} player(s). Brother Frank Cup requires 4 players per team. Do you want to continue anyway?`);
+                if (!proceed) {
+                    return;
+                }
             }
 
             const team = {
@@ -1066,14 +1631,25 @@ function updateOverallScoring() {
                 players: players
             };
 
-            teams.push(team);
-            localStorage.setItem('teams', JSON.stringify(teams));
-            displaySavedTeams();
-            
-            // Clear temp photos
-            window.tempPhotos = {};
-            
-            alert('Team saved successfully!');
+            console.log('Team object created:', team); // Debug log
+
+            try {
+                teams.push(team);
+                localStorage.setItem('teams', JSON.stringify(teams));
+                console.log('Team saved to localStorage'); // Debug log
+                
+                displaySavedTeams();
+                
+                // Clear temp photos
+                if (window.tempPhotos) {
+                    window.tempPhotos = {};
+                }
+                
+                alert(`Team "${teamName}" saved successfully with ${players.length} player(s)!`);
+            } catch (error) {
+                console.error('Error saving team:', error);
+                alert('Error saving team. Please try again.');
+            }
         }
 
         function deleteTeam() {
@@ -1120,6 +1696,15 @@ function updateOverallScoring() {
                     if (playerCards[index]) {
                         playerCards[index].querySelector('.player-name').value = player.name;
                         playerCards[index].querySelector('.player-handicap').value = player.handicap;
+                        
+                        // Load photo if available
+                        const photo = getPlayerPhoto(player.name);
+                        if (photo) {
+                            const preview = document.getElementById(`photo-preview-${index}`);
+                            if (preview) {
+                                preview.innerHTML = `<img src="${photo}" alt="Player photo">`;
+                            }
+                        }
                     }
                 });
             }
@@ -1130,6 +1715,27 @@ function updateOverallScoring() {
                 teams = teams.filter(t => t.id !== teamId);
                 localStorage.setItem('teams', JSON.stringify(teams));
                 displaySavedTeams();
+            }
+        }
+
+        function deleteTeam() {
+            if (confirm('Are you sure you want to delete the current team setup?')) {
+                document.getElementById('team-name').value = '';
+                document.querySelectorAll('.player-name').forEach(input => input.value = '');
+                document.querySelectorAll('.player-handicap').forEach(input => input.value = '');
+                
+                // Clear photo previews
+                for (let i = 0; i < 4; i++) {
+                    const preview = document.getElementById(`photo-preview-${i}`);
+                    if (preview) {
+                        preview.innerHTML = '';
+                    }
+                }
+                
+                // Clear temp photos
+                if (window.tempPhotos) {
+                    window.tempPhotos = {};
+                }
             }
         }
 
@@ -1560,6 +2166,9 @@ function updateOverallScoring() {
                         handicap: player.handicap,
                         teamName: team.name,
                         rounds: [],
+                        wins: 0,
+                        losses: 0,
+                        ties: 0,
                         eagles: 0,
                         birdies: 0,
                         pars: 0,
@@ -1577,6 +2186,54 @@ function updateOverallScoring() {
             const course = courses[courses.length - 1];
             rounds.forEach(round => {
                 if (round.completed && round.playerScores) {
+                    // Calculate match results for win/loss tracking
+                    if (round.matchType === '2v2-best' || round.matchType === '2v2-combined') {
+                        // For team matches, all players on winning team get a win
+                        const team1Players = [];
+                        const team2Players = [];
+                        
+                        // Categorize players by team
+                        Object.keys(round.playerScores).forEach(playerName => {
+                            const playerTeam = teams.find(team => team.players.some(p => p.name === playerName));
+                            if (playerTeam) {
+                                if (playerTeam === teams[0]) {
+                                    team1Players.push(playerName);
+                                } else {
+                                    team2Players.push(playerName);
+                                }
+                            }
+                        });
+                        
+                        // Determine match result and update win/loss records
+                        if (round.team1Points > round.team2Points) {
+                            // Team 1 wins
+                            team1Players.forEach(playerName => {
+                                if (allPlayers[playerName]) allPlayers[playerName].wins++;
+                            });
+                            team2Players.forEach(playerName => {
+                                if (allPlayers[playerName]) allPlayers[playerName].losses++;
+                            });
+                        } else if (round.team2Points > round.team1Points) {
+                            // Team 2 wins
+                            team2Players.forEach(playerName => {
+                                if (allPlayers[playerName]) allPlayers[playerName].wins++;
+                            });
+                            team1Players.forEach(playerName => {
+                                if (allPlayers[playerName]) allPlayers[playerName].losses++;
+                            });
+                        } else {
+                            // Tie
+                            [...team1Players, ...team2Players].forEach(playerName => {
+                                if (allPlayers[playerName]) allPlayers[playerName].ties++;
+                            });
+                        }
+                    } else if (round.matchType === '1v1') {
+                        // For individual matches, track individual wins/losses
+                        // This would need match-specific data that we'll implement when individual matches are properly tracked
+                        // For now, we'll add this functionality when individual match data structure is enhanced
+                    }
+                    
+                    // Process scoring statistics
                     Object.keys(round.playerScores).forEach(playerName => {
                         if (allPlayers[playerName]) {
                             const scores = round.playerScores[playerName];
@@ -1641,9 +2298,22 @@ function updateOverallScoring() {
                         ${photoHtml}
                         <div>
                             <h4>${player.name} (${player.teamName}) - Handicap: ${player.handicap}</h4>
+                            <p><strong>Match Record:</strong> ${player.wins}-${player.losses}-${player.ties} (W-L-T)</p>
                         </div>
                     </div>
                     <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-number">${player.wins}</div>
+                            <div class="stat-label">Wins</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number">${player.losses}</div>
+                            <div class="stat-label">Losses</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number">${player.ties}</div>
+                            <div class="stat-label">Ties</div>
+                        </div>
                         <div class="stat-card">
                             <div class="stat-number">${player.holesInOne}</div>
                             <div class="stat-label">Holes in One</div>
@@ -1802,14 +2472,75 @@ function updateOverallScoring() {
             
             const detailsWindow = window.open('', '_blank', 'width=800,height=600,scrollbars=yes');
             
-            // Generate player details with photos
+            // Calculate win/loss records for this tournament
+            const playerRecords = {};
+            
+            // Initialize player records
+            tournament.teams.forEach(team => {
+                team.players.forEach(player => {
+                    playerRecords[player.name] = {
+                        name: player.name,
+                        teamName: team.name,
+                        wins: 0,
+                        losses: 0,
+                        ties: 0
+                    };
+                });
+            });
+            
+            // Calculate match results
+            tournament.rounds.forEach(round => {
+                if (round.completed && round.playerScores) {
+                    if (round.matchType === '2v2-best' || round.matchType === '2v2-combined') {
+                        const team1Players = [];
+                        const team2Players = [];
+                        
+                        // Categorize players by team
+                        Object.keys(round.playerScores).forEach(playerName => {
+                            const playerTeam = tournament.teams.find(team => team.players.some(p => p.name === playerName));
+                            if (playerTeam) {
+                                if (playerTeam === tournament.teams[0]) {
+                                    team1Players.push(playerName);
+                                } else {
+                                    team2Players.push(playerName);
+                                }
+                            }
+                        });
+                        
+                        // Update win/loss records
+                        if (round.team1Points > round.team2Points) {
+                            team1Players.forEach(playerName => {
+                                if (playerRecords[playerName]) playerRecords[playerName].wins++;
+                            });
+                            team2Players.forEach(playerName => {
+                                if (playerRecords[playerName]) playerRecords[playerName].losses++;
+                            });
+                        } else if (round.team2Points > round.team1Points) {
+                            team2Players.forEach(playerName => {
+                                if (playerRecords[playerName]) playerRecords[playerName].wins++;
+                            });
+                            team1Players.forEach(playerName => {
+                                if (playerRecords[playerName]) playerRecords[playerName].losses++;
+                            });
+                        } else {
+                            [...team1Players, ...team2Players].forEach(playerName => {
+                                if (playerRecords[playerName]) playerRecords[playerName].ties++;
+                            });
+                        }
+                    }
+                }
+            });
+            
+            // Generate player details with photos and records
             let teamDetailsHtml = '';
             tournament.teams.forEach(team => {
                 teamDetailsHtml += `<h4>${team.name}</h4><ul>`;
                 team.players.forEach(player => {
                     const photo = getPlayerPhoto(player.name);
                     const photoHtml = photo ? `<img src="${photo}" style="width: 40px; height: 40px; border-radius: 50%; margin-right: 10px; object-fit: cover; border: 2px solid #782F40;">` : '';
-                    teamDetailsHtml += `<li style="display: flex; align-items: center; margin: 0.5rem 0;">${photoHtml}${player.name} (Handicap: ${player.handicap})</li>`;
+                    const record = playerRecords[player.name];
+                    const recordText = record ? ` | Record: ${record.wins}-${record.losses}-${record.ties}` : '';
+                    teamDetailsHtml += `<li style="display: flex; align-items: center; margin: 0.5rem 0;">${photoHtml}${player.name} (Handicap: ${player.handicap}${recordText})</li>`;
                 });
                 teamDetailsHtml += '</ul>';
             });
@@ -1826,6 +2557,8 @@ function updateOverallScoring() {
                         h1, h2 { color: #782F40; }
                         .mvp-section { display: flex; align-items: center; margin: 20px 0; }
                         .mvp-photo { width: 60px; height: 60px; border-radius: 50%; margin-right: 15px; border: 3px solid #782F40; object-fit: cover; }
+                        .records-table { margin: 20px 0; }
+                        .records-table th { background: #FFD700; color: #782F40; }
                     </style>
                 </head>
                 <body>
@@ -1848,6 +2581,21 @@ function updateOverallScoring() {
                                 <td>${round.team1Points}</td>
                                 <td>${round.team2Points}</td>
                                 <td>${round.completed ? 'Complete' : 'Incomplete'}</td>
+                            </tr>
+                        `).join('')}
+                    </table>
+                    
+                    <h3>Player Records</h3>
+                    <table class="records-table">
+                        <tr><th>Player</th><th>Team</th><th>Wins</th><th>Losses</th><th>Ties</th><th>Record</th></tr>
+                        ${Object.values(playerRecords).map(player => `
+                            <tr>
+                                <td>${player.name}</td>
+                                <td>${player.teamName}</td>
+                                <td>${player.wins}</td>
+                                <td>${player.losses}</td>
+                                <td>${player.ties}</td>
+                                <td>${player.wins}-${player.losses}-${player.ties}</td>
                             </tr>
                         `).join('')}
                     </table>
