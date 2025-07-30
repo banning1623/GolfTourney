@@ -393,7 +393,7 @@
                     </div>
                     <div class="form-group">
                         <label for="roundType">Round Type:</label>
-                        <select id="roundType">
+                        <select id="roundType" onchange="updateHoleSetup()">
                             <option value="9">9 Holes</option>
                             <option value="18">18 Holes</option>
                         </select>
@@ -683,7 +683,7 @@
             const table = document.getElementById('holeSetupTable');
             table.innerHTML = '';
 
-            // Default par and handicap values
+            // Default par and handicap values for 18 holes
             const defaultPars = [4,5,4,3,4,5,4,3,4,4,3,5,4,4,4,5,3,4];
             const defaultHandicaps = [5,11,1,13,17,15,3,7,9,8,16,10,4,2,18,12,14,6];
 
